@@ -1,0 +1,21 @@
+# Maintainer-only release and submission notes
+/SUBMISSION.md
+
+# Local secrets and machine-specific configuration
+/.env
+/.env.*
+!/.env.example
+/private/
+/.local/
+
+# Local agent and generated analysis output
+/.agents/
+/.claude/
+/.codex/
+/graphify-out/
+
+# Editor and operating-system residue
+.DS_Store
+*.swp
+*.swo
+*~
