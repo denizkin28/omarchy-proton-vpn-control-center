@@ -1,4 +1,4 @@
-# Proton VPN for Omarchy
+# Proton VPN Control Center for Omarchy
 
 A native Omarchy bar widget for the official Proton VPN Linux CLI.
 

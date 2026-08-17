@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "io.github.bramvera.proton-vpn",
-  "name": "Proton VPN",
+  "name": "Proton VPN Control Center",
   "version": "0.1.0",
   "author": "Bram Vera",
   "license": "MIT",
@@ -13,7 +13,7 @@
     "barWidget": "Panel.qml"
   },
   "barWidget": {
-    "displayName": "Proton VPN",
+    "displayName": "Proton VPN Control Center",
     "description": "View Proton VPN status and exit IP, connect, disconnect, and choose a quick-connect target.",
     "category": "Network",
     "allowMultiple": false,

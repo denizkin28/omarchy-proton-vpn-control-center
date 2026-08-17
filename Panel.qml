@@ -351,7 +351,7 @@ Panel {
             PanelHero {
               id: hero
               width: parent.width
-              title: vpn.server || "Proton VPN"
+              title: vpn.server || "Proton VPN Control Center"
               meta: vpn.connected && vpn.location !== "" ? vpn.location : vpn.statusText
               foreground: root.foreground
               fontFamily: root.fontFamily
