@@ -37,6 +37,7 @@ Item {
   readonly property string cliCommand: String(setting("cliCommand", "protonvpn") || "protonvpn").trim()
   readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 30, 5, 3600)
   readonly property bool busy: whichProcess.running || statusProcess.running || actionProcess.running || configActionProcess.running || dnsCompatibilityBusy || onboardingBusy
+  readonly property bool indicatorBusy: actionProcess.running || onboardingBusy
   readonly property bool locationsBusy: countriesProcess.running || citiesProcess.running
   readonly property bool configBusy: configListProcess.running || configActionProcess.running
   readonly property bool reportBusy: reportStatusProcess.running || publicIpProcess.running || browserProcess.running

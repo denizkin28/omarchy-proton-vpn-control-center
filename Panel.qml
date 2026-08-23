@@ -300,7 +300,7 @@ Panel {
         badgeColor: root.urgent
         connected: vpn.connected
         warning: vpn.needsLogin || vpn.lastError !== ""
-        busy: vpn.busy
+        busy: vpn.indicatorBusy
       }
     }
     onPressed: function(buttonCode) {
@@ -364,7 +364,7 @@ Panel {
                   badgeColor: root.urgent
                   connected: vpn.connected
                   warning: vpn.needsLogin || vpn.lastError !== ""
-                  busy: vpn.busy
+                  busy: vpn.indicatorBusy
                 }
               }
               trailingControl: Component {

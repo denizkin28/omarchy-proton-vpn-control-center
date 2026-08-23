@@ -218,7 +218,7 @@ cd omarchy-proton-vpn
 omarchy plugin validate .
 /usr/lib/qt6/bin/qmllint -I "${OMARCHY_PATH:-/usr/share/omarchy}/shell" \
   Panel.qml Service.qml ProtonVpnIcon.qml
-node --test tests/model.test.js
+node --test tests/*.test.js
 ```
 
 For local development, link the checkout into Omarchy's user-owned plugin directory:
