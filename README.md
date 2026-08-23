@@ -11,12 +11,6 @@ Connect, disconnect, choose locations, manage VPN settings, save favorite target
 
 ![Proton VPN for Omarchy plugin overview](preview.png)
 
-### Interface details
-
-| Connected | VPN settings |
-| --- | --- |
-| ![Connected Proton VPN panel with masked exit IP, favorites, and quick connect](assets/proton-vpn-panel.png) | ![Proton VPN settings for NetShield, kill switch, IPv6, custom DNS, port forwarding, and Moderate NAT](assets/proton-vpn-settings.png) |
-
 ## Install
 
 ```bash
