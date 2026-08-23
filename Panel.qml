@@ -17,7 +17,6 @@ Panel {
   readonly property color urgent: bar ? bar.urgent : Color.urgent
   readonly property color dim: Qt.darker(foreground, 1.55)
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property color barIconColor: vpn.connected ? barForeground : Qt.darker(barForeground, 1.55)
   readonly property var favorites: settings && settings.favorites instanceof Array ? settings.favorites : []
   property bool settingsExpanded: false
   property bool exitIpVisible: false
@@ -295,8 +294,6 @@ Panel {
     iconComponent: Component {
       ProtonVpnIcon {
         iconSize: Style.space(11)
-        color: root.barIconColor
-        accentColor: Color.accent
         badgeColor: root.urgent
         connected: vpn.connected
         warning: vpn.needsLogin || vpn.lastError !== ""
@@ -355,12 +352,10 @@ Panel {
               meta: vpn.connected && vpn.location !== "" ? vpn.location : vpn.statusText
               foreground: root.foreground
               fontFamily: root.fontFamily
-              iconOpacity: vpn.connected ? 1.0 : 0.5
+              iconOpacity: 1.0
               iconComponent: Component {
                 ProtonVpnIcon {
                   iconSize: Style.font.display
-                  color: root.foreground
-                  accentColor: Color.accent
                   badgeColor: root.urgent
                   connected: vpn.connected
                   warning: vpn.needsLogin || vpn.lastError !== ""

@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict")
+const crypto = require("node:crypto")
 const fs = require("node:fs")
 const path = require("node:path")
 const test = require("node:test")
@@ -6,6 +7,7 @@ const test = require("node:test")
 const root = path.resolve(__dirname, "..")
 const panel = fs.readFileSync(path.join(root, "Panel.qml"), "utf8")
 const service = fs.readFileSync(path.join(root, "Service.qml"), "utf8")
+const icon = fs.readFileSync(path.join(root, "ProtonVpnIcon.qml"), "utf8")
 
 test("background polling does not pulse the VPN indicator", () => {
   const indicatorBusy = service.match(/readonly property bool indicatorBusy:\s*([^\n]+)/)
@@ -20,4 +22,21 @@ test("background polling does not pulse the VPN indicator", () => {
 
   const iconBindings = [...panel.matchAll(/busy:\s*vpn\.indicatorBusy/g)]
   assert.equal(iconBindings.length, 2, "both VPN indicators must use the stable indicator busy state")
+})
+
+test("uses the official gradient and the white Simple Icons silhouette", () => {
+  const asset = fs.readFileSync(path.join(root, "assets", "VPN-logomark-noborder.svg"))
+  const disconnectedAsset = fs.readFileSync(path.join(root, "assets", "proton-vpn-simple-white.svg"), "utf8")
+
+  assert.equal(
+    crypto.createHash("sha256").update(asset).digest("hex"),
+    "1c71b5712fe9beb1605871431d5d967d75aac3e300cd7664ee97c3f4e7170277"
+  )
+  assert.match(icon, /\? "assets\/VPN-logomark-noborder\.svg"/)
+  assert.match(icon, /: "assets\/proton-vpn-simple-white\.svg"/)
+  assert.match(icon, /opacity: root\.busy \? 0\.68 : 1\.0/)
+  assert.match(icon, /visible: root\.warning/)
+  assert.doesNotMatch(icon, /PathSvg|Simple Icons/)
+  assert.match(disconnectedAsset, /fill="#FFFFFF"/)
+  assert.doesNotMatch(disconnectedAsset, /#000000/)
 })

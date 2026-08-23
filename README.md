@@ -9,6 +9,10 @@ Connect, disconnect, choose locations, manage VPN settings, save favorite target
 
 ## Preview
 
+![Proton VPN for Omarchy plugin overview](preview.png)
+
+### Interface details
+
 | Connected | VPN settings |
 | --- | --- |
 | ![Connected Proton VPN panel with masked exit IP, favorites, and quick connect](assets/proton-vpn-panel.png) | ![Proton VPN settings for NetShield, kill switch, IPv6, custom DNS, port forwarding, and Moderate NAT](assets/proton-vpn-settings.png) |
@@ -242,7 +246,7 @@ The widget exposes these methods on `io.github.bramvera.proton-vpn`:
 
 ## Credits and trademarks
 
-- [Proton VPN](https://protonvpn.com/) and its official Linux CLI are products of Proton AG. The Proton VPN name and mark belong to Proton AG. The mark embedded in this plugin is sourced from the [Proton media kit](https://proton.me/media/kit) through [Simple Icons](https://simpleicons.org/?q=protonvpn); Proton permits use of its media assets when the accompanying media refers back to Proton. This project is unofficial and does not imply endorsement.
+- [Proton VPN](https://protonvpn.com/) and its official Linux CLI are products of Proton AG. The Proton VPN name and mark belong to Proton AG. The connected gradient logomark is sourced directly from the [Proton media kit](https://proton.me/media/kit); the disconnected monochrome silhouette is adapted from the [Streamline Simple Icons Proton VPN mark](https://streamlinehq.com/icons/simple-icons). This project is unofficial and does not imply endorsement.
 - [AbuseIPDB](https://www.abuseipdb.com/faq) provides the public reputation page opened by the optional check. No AbuseIPDB logo, code, API key, or API response is bundled by this plugin.
 - [ipify](https://www.ipify.org/) provides the public IPv4 lookup endpoint used through `proton0`.
 - The preview screenshots were captured from this plugin. Third-party names and marks shown in them remain the property of their respective owners.
