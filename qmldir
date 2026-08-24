@@ -1,0 +1,2 @@
+module denizkin.protonvpn
+singleton VpnService 1.0 Service.qml

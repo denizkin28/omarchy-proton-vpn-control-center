@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""Versioned, read-only JSON bridge to Proton VPN's cached server list."""
+
+from __future__ import annotations
+
+import argparse
+import importlib.metadata
+import json
+import sys
+from typing import Any
+
+HELPER_VERSION = "1.1.0"
+SCHEMA_VERSION = 1
+FEATURE_NAMES = {
+    1: "secure-core",
+    2: "tor",
+    4: "p2p",
+    8: "streaming",
+    16: "ipv6",
+}
+
+
+def package_version(name: str) -> str | None:
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def response(ok: bool, **values: Any) -> dict[str, Any]:
+    return {
+        "ok": ok,
+        "schemaVersion": SCHEMA_VERSION,
+        "helperVersion": HELPER_VERSION,
+        "protonPackageVersion": package_version("proton-vpn-api-core"),
+        **values,
+    }
+
+
+def feature_names(server: Any) -> list[str]:
+    mask = 0
+    for feature in server.features:
+        mask |= int(feature)
+    return [name for bit, name in FEATURE_NAMES.items() if mask & bit]
+
+
+def normalize(server: Any) -> dict[str, Any]:
+    tier = int(server.tier)
+    return {
+        "id": str(server.name),
+        "city": str(server.city or ""),
+        "region": str(server.state or ""),
+        "exitCountry": str(server.exit_country or ""),
+        "entryCountry": str(server.entry_country or ""),
+        "latitude": float(server.latitude or 0),
+        "longitude": float(server.longitude or 0),
+        "load": int(server.load or 0),
+        "tier": tier,
+        "tierName": {0: "Free", 2: "Plus", 3: "Visionary"}.get(tier, str(tier)),
+        "online": bool(server.enabled),
+        "maintenance": bool(server.under_maintenance),
+        "features": feature_names(server),
+    }
+
+
+def load_normalized_servers() -> list[dict[str, Any]]:
+    from proton.vpn.session.servers.server_list_fetcher import ServerListFetcher
+
+    server_list = ServerListFetcher(session=None).load_from_cache()
+    return [normalize(server) for server in server_list.logicals]
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(description=__doc__)
+    result.add_argument("--version", action="store_true")
+    result.add_argument("--query", default="")
+    result.add_argument("--feature", choices=["any", *FEATURE_NAMES.values()], default="any")
+    result.add_argument("--max-load", type=int, default=100)
+    result.add_argument("--country", default="")
+    result.add_argument("--region", default="")
+    result.add_argument("--available-only", action="store_true")
+    result.add_argument("--limit", type=int, default=100)
+    return result
+
+
+def main() -> int:
+    args = parser().parse_args()
+    if args.version:
+        print(json.dumps(response(True)))
+        return 0
+    try:
+        normalized = load_normalized_servers()
+    except Exception as error:  # Compatibility boundary: always return valid JSON.
+        print(json.dumps(response(
+            False,
+            error="Proton server data is unavailable",
+            detail=f"{type(error).__name__}: {error}",
+            servers=[],
+            total=0,
+        )))
+        return 2
+
+    query = args.query.strip().casefold()
+    country = args.country.strip().upper()
+    region = args.region.strip().casefold()
+    maximum_load = min(100, max(0, args.max_load))
+
+    def matches(server: dict[str, Any]) -> bool:
+        if query and query not in " ".join((
+            server["id"], server["city"], server["exitCountry"],
+            server["entryCountry"], server["region"], " ".join(server["features"]),
+        )).casefold():
+            return False
+        if country and server["exitCountry"] != country:
+            return False
+        if region and server["region"].casefold() != region:
+            return False
+        if args.feature != "any" and args.feature not in server["features"]:
+            return False
+        if server["load"] > maximum_load:
+            return False
+        if args.available_only and (not server["online"] or server["maintenance"]):
+            return False
+        return True
+
+    filtered = [server for server in normalized if matches(server)]
+    country_groups: dict[str, list[dict[str, Any]]] = {}
+    for server in filtered:
+        if server["exitCountry"] and (server["latitude"] or server["longitude"]):
+            country_groups.setdefault(server["exitCountry"], []).append(server)
+    map_countries = [{
+        "code": code,
+        "latitude": sum(item["latitude"] for item in items) / len(items),
+        "longitude": sum(item["longitude"] for item in items) / len(items),
+        "serverCount": len(items),
+        "minimumLoad": min(item["load"] for item in items),
+        "available": any(item["online"] and not item["maintenance"] for item in items),
+    } for code, items in sorted(country_groups.items())]
+    regions = sorted({server["region"] for server in normalized
+                      if server["region"] and (not country or server["exitCountry"] == country)})
+    filtered.sort(key=lambda server: (
+        not server["online"], server["maintenance"], server["load"], server["id"]
+    ))
+    limit = min(250, max(1, args.limit))
+    print(json.dumps(response(
+        True,
+        servers=filtered[:limit],
+        total=len(filtered),
+        cacheTotal=len(normalized),
+        limit=limit,
+        truncated=limit < len(filtered),
+        regions=regions,
+        mapCountries=map_countries,
+    ), separators=(",", ":")))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

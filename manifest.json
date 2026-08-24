@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.bramvera.proton-vpn",
+  "id": "denizkin.protonvpn",
   "name": "Proton VPN Control Center",
-  "version": "0.1.0",
-  "author": "Bram Vera",
+  "version": "0.9.0-local",
+  "author": "Deniz Kin",
   "license": "MIT",
-  "description": "Control the official Proton VPN Linux CLI and inspect the active exit IP from the Omarchy bar.",
+  "description": "Native, security-hardened control of the official Proton VPN Linux CLI from the Omarchy bar.",
   "kinds": [
     "bar-widget"
   ],
@@ -20,8 +20,12 @@
     "defaultSection": "right",
     "defaults": {
       "cliCommand": "protonvpn",
-      "defaultCountryCode": "ID",
-      "refreshIntervalSec": 30
+      "defaultCountryCode": "AE",
+      "refreshIntervalSec": 30,
+      "autoConnectUntrusted": false,
+      "recoverUnexpectedDrops": false,
+      "vpnNotifications": false,
+      "settingsVersion": 1
     },
     "schema": [
       {
@@ -35,7 +39,7 @@
         "key": "defaultCountryCode",
         "type": "string",
         "label": "Default country code",
-        "defaultValue": "ID",
+        "defaultValue": "AE",
         "description": "Two-letter country code selected when the location list opens."
       },
       {
@@ -46,6 +50,27 @@
         "max": 3600,
         "step": 5,
         "defaultValue": 30
+      },
+      {
+        "key": "autoConnectUntrusted",
+        "type": "boolean",
+        "label": "Protect untrusted networks",
+        "defaultValue": false,
+        "description": "Automatically connect Proton VPN on networks not marked trusted."
+      },
+      {
+        "key": "recoverUnexpectedDrops",
+        "type": "boolean",
+        "label": "Recover unexpected drops",
+        "defaultValue": false,
+        "description": "Retry the last server and then the fastest server after an unexpected disconnect."
+      },
+      {
+        "key": "vpnNotifications",
+        "type": "boolean",
+        "label": "VPN notifications",
+        "defaultValue": false,
+        "description": "Notify about recovery and forwarded-port changes."
       }
     ]
   }

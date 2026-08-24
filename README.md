@@ -1,6 +1,10 @@
 # Proton VPN Control Center for Omarchy
 
-A native Omarchy bar widget for the official Proton VPN Linux CLI.
+A local, security-reviewed Omarchy bar widget for the official Proton VPN Linux CLI.
+
+This build is maintained for Deniz's Omarchy system and is derived from Bram
+Vera's MIT-licensed Proton VPN Control Center. It keeps the original copyright
+and attribution while using the local `denizkin.protonvpn` identity.
 
 Connect, disconnect, choose locations, manage VPN settings, save favorite targets, and inspect the active exit IP without leaving the Omarchy bar.
 
@@ -14,7 +18,7 @@ Connect, disconnect, choose locations, manage VPN settings, save favorite target
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/bramvera/omarchy-proton-vpn.git --enable
+omarchy plugin add https://github.com/OWNER/REPOSITORY.git --enable
 ```
 
 The widget appears in the right section of the bar by default.
@@ -37,7 +41,7 @@ After installation, enter your Proton username in the panel and select **Sign in
 protonvpn signin USERNAME
 ```
 
-The plugin never handles your Proton password. It detects installation and sign-in completion automatically; manual refresh buttons are also available.
+The plugin never handles your Proton password. A small HUP-resistant terminal wrapper keeps Proton's official interactive prompt open, displays failures until you dismiss them, and lets the panel detect sign-in completion automatically.
 
 > [!WARNING]
 > The official Proton VPN CLI cannot run alongside the Proton VPN GUI. Headless use is also unsupported. Read [Proton's official Linux CLI guide](https://protonvpn.com/support/linux-cli) before replacing an existing GUI installation.
@@ -73,6 +77,9 @@ External network services:
 - Searchable countries loaded directly from the signed-in CLI
 - Cascading, searchable city lists for the selected country
 - Manual connection to a known server ID, such as `CH#242`
+- Full searchable server browser sourced read-only from Proton's local cache
+- Interactive local server map using normalized cached coordinates, with no map service or tracking
+- Server load, availability, tier, entry/exit country, and feature filters
 - P2P, Secure Core, and Tor server filters
 - Favorite quick-connect targets that persist across shell restarts
 
@@ -106,6 +113,48 @@ External network services:
 - Persistent favorites and custom DNS input through Omarchy widget settings
 - Argument-array process execution without interpolating user values into a shell command
 
+### Profiles and smart connections
+
+- Save up to 12 named profiles containing the selected target, feature, and current CLI settings
+- Apply profiles through validated sequential official CLI commands
+- Search the full cache and smart-connect to the lowest-load available matching server
+- Keep a local history of the 20 most recently used unique servers
+- Browse and filter servers by state or region when Proton provides that metadata
+
+### Health and automation
+
+- Distinguish connected, connecting, degraded, unprotected, offline, and login-required states
+- Verify the `proton0` interface, default VPN route, Proton DNS, and tunnel traffic counters
+- Optional auto-connect on untrusted networks with a two-minute retry cooldown
+- Mark NetworkManager connections as trusted without changing NetworkManager itself
+- Choose Fastest or a saved profile as the untrusted-network policy
+- Optional recovery after an unexpected drop: retry the last server, then Fastest
+- One shared service keeps polling, automation, and connection state synchronized across monitors
+- Shared manual-disconnect markers prevent recovery from undoing deliberate or transactional disconnects
+- Optional desktop notifications for recovery and forwarded-port changes
+
+Trust is matched by NetworkManager connection name, not by cryptographic network
+identity. A different access point reusing a trusted SSID/profile name may also be
+treated as trusted; use this convenience feature only for names you control.
+
+### Port forwarding and split tunnelling
+
+- Start or stop the existing `proton-port-forward.service` lease supervisor
+- Display the current forwarded port, renewal status, and qBittorrent delivery state
+- Read and update Proton's official split-tunnelling settings and D-Bus backend
+- Support include/exclude mode with executable paths and IP ranges
+- Search installed desktop applications and add them without typing executable paths
+- Require disconnection before split-tunnelling changes
+
+### Protocol and advanced kill switch
+
+- Detect protocols validated by the installed Proton registry; currently WireGuard and OpenVPN UDP/TCP
+- Apply disconnected-only changes transactionally, reconnect the current server, and roll back on failure
+- Expose Proton's persistent advanced kill switch through its official NetworkManager backend
+- Refuse unsafe advanced-kill-switch activation when no known reconnect server is available
+- Reject protocol, kill-switch, and split-tunnelling combinations that Proton marks incompatible
+- Keep unvalidated Proton Protocols and Stealth hidden rather than offering nonfunctional controls
+
 ## Controls
 
 - Left click: open or close the panel
@@ -118,7 +167,23 @@ External network services:
 
 Countries and cities come directly from the official CLI. Select a country first, then search its available cities.
 
-The CLI does not currently expose a browsable list of individual servers. City connections therefore ask Proton VPN to choose the fastest eligible server in that city. If you already know a server ID, select the visible **Connect/Switch by server ID** shortcut, enter an ID such as `CH#242`, and connect directly. This also lets an active connection switch away from a server with an undesirable exit IP.
+The versioned `protonvpn-data-helper` reads Proton API Core's local server cache
+and returns normalized schema-versioned JSON to the QML plugin. It never returns
+Proton Python objects or modifies the cache. The browser searches the complete
+cache while returning at most 100 sorted results per query to keep the shell
+responsive.
+
+The map aggregates matching servers by exit country and plots Proton's cached
+latitude/longitude values locally. Selecting a marker applies the country filter;
+it never connects directly or contacts a mapping provider.
+
+Selecting an individual server always invokes only `protonvpn connect SERVER_ID`.
+The helper never connects, disconnects, authenticates, refreshes the server list,
+or changes VPN settings. If Proton changes its internal Python API or cache format,
+the enhanced browser disables itself and manual server-ID entry remains available.
+
+City connections continue to ask Proton VPN to choose the fastest eligible server
+in that city.
 
 ## VPN settings
 
@@ -158,14 +223,46 @@ State changes happen only after an explicit control is selected:
 - **Install Proton VPN CLI** and **Sign in with Proton** open an interactive terminal.
 - **Allow Proton DNS** applies `nmcli device modify proton0 connection.dns-over-tls 0` to the active Proton device. It is never run by detection alone.
 - **Check IP reputation** opens the public AbuseIPDB page for the displayed exit IP.
+- Network-aware auto-connect remains disabled until explicitly enabled.
+- Unexpected-drop recovery and VPN notifications remain disabled until explicitly enabled.
+- Trusted-network entries, profiles, and server history stay in the Omarchy plugin settings.
+- Port lease controls only start or stop the existing user service; they do not enable it at boot.
+- Split-tunnelling changes require an explicit button press and are rejected while connected.
+
+## Advanced helpers
+
+`protonvpn-data-helper` is the read-only server-cache bridge.
+`protonvpn-system-helper` provides versioned JSON for health, active-network,
+port-forwarding status, profiles, and guarded split-tunnelling operations.
+
+The port-forwarding lease follows Proton's documented NAT-PMP procedure: TCP
+and UDP mappings use gateway `10.2.0.1`, have a 60-second lease, and renew every
+45 seconds. It requires a paid plan, an eligible P2P server, and port forwarding
+enabled in the Proton CLI configuration.
 
 The plugin does not edit files under `/usr/share/omarchy` or replace unrelated user configuration.
 
 ### Setting limitations
 
-- Proton does not allow kill-switch configuration changes while connected, so that control remains disabled until the VPN disconnects.
+- Proton requires disconnection for protocol, kill-switch, and split-tunnelling changes. The plugin performs that transition automatically, reconnects the current server, and rolls back if either the change or reconnection fails.
 - Paid-plan settings remain unavailable when the CLI reports `Upgrade to enable`.
 - Enabling port forwarding requests a forwarded port, but a separate helper must maintain and retrieve the lease. See [Proton's Linux CLI documentation](https://protonvpn.com/support/use-linux-cli) for the current example.
+- Proton VPN CLI 1.0.1 does not expose Stealth or Smart Protocol through its command or validated backend registry. The plugin hides them instead of writing undocumented settings.
+- The official CLI currently documents split tunnelling as unavailable. This plugin enables its controls only when Proton's separately installed official D-Bus backend is actually detected.
+- Password and two-factor prompts remain inside Proton's official interactive CLI. Embedding them in QML would require the plugin to handle credentials and is intentionally not implemented.
+
+## Build a distributable archive
+
+Create a deterministic archive and SHA-256 checksum without including Git data,
+local caches, diagnostics, or credentials:
+
+```bash
+./tools/package.sh
+```
+
+Artifacts are written to `dist/`. See [DISTRIBUTION.md](DISTRIBUTION.md) for the
+review, tagging, and installation workflow. Publishing or pushing remains a
+separate explicit maintainer action.
 
 ## Exit-IP reputation
 
@@ -186,19 +283,18 @@ Omarchy's widget settings expose:
 You can move the widget with Omarchy's normal bar command:
 
 ```bash
-omarchy bar move io.github.bramvera.proton-vpn --section right
+omarchy bar move denizkin.protonvpn --section right
 ```
 
 ## Update
 
-```bash
-omarchy plugin update io.github.bramvera.proton-vpn
-```
+This is a locally maintained plugin. Review and merge upstream changes manually;
+do not replace it with an unreviewed marketplace update.
 
 ## Remove
 
 ```bash
-omarchy plugin remove io.github.bramvera.proton-vpn
+omarchy plugin remove denizkin.protonvpn
 ```
 
 Removing the plugin does not uninstall the Proton VPN CLI or alter your Proton account.
@@ -210,29 +306,34 @@ VPN settings you explicitly changed through the panel remain Proton VPN CLI sett
 Clone the repository and validate it against the installed Omarchy shell:
 
 ```bash
-git clone https://github.com/bramvera/omarchy-proton-vpn.git
-cd omarchy-proton-vpn
+git clone https://github.com/OWNER/REPOSITORY.git denizkin.protonvpn
+cd denizkin.protonvpn
 
 omarchy plugin validate .
-/usr/lib/qt6/bin/qmllint -I "${OMARCHY_PATH:-/usr/share/omarchy}/shell" \
-  Panel.qml Service.qml ProtonVpnIcon.qml
 node --test tests/*.test.js
+python tests/data-helper.test.py -v
+python tests/system-helper.test.py -v
+python tests/lifecycle.test.py -v
 ```
 
 For local development, link the checkout into Omarchy's user-owned plugin directory:
 
 ```bash
-ln -s "$PWD" "$HOME/.config/omarchy/plugins/io.github.bramvera.proton-vpn"
+ln -s "$PWD" "$HOME/.config/omarchy/plugins/denizkin.protonvpn"
 omarchy restart shell
 ```
 
 Do not start a second Quickshell process. Omarchy plugins share the existing long-running shell process.
 
+`omarchy plugin validate .` is the authoritative QML/plugin check. Standalone
+`qmllint` cannot fully resolve Omarchy's runtime-provided `qs.*` namespaces and
+typed IPC syntax, so it may emit false-positive import or parser warnings.
+
 ## IPC
 
-The widget exposes these methods on `io.github.bramvera.proton-vpn`:
+The widget exposes these methods on `denizkin.protonvpn`:
 
-`open`, `close`, `show`, `hide`, `toggle`, `refresh`, `refreshLocations`, `loadCities`, `locationStatus`, `refreshConfig`, `configStatus`, `checkExitIp`, `exitIpStatus`, `up`, `disconnect`, and `status`.
+`open`, `close`, `show`, `hide`, `toggle`, `openSettings`, `openServerMap`, `refresh`, `refreshLocations`, `loadCities`, `locationStatus`, `refreshServers`, `serverStatus`, `refreshConfig`, `configStatus`, `advancedStatus`, `checkExitIp`, `exitIpStatus`, `up`, `disconnect`, and `status`.
 
 ## License
 

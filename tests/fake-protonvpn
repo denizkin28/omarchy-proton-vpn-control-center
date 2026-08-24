@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -u
+
+if [[ -n "${PROTONVPN_FAKE_LOG:-}" ]]; then
+  printf '%s\n' "$*" >> "$PROTONVPN_FAKE_LOG"
+fi
+
+case "${1:-}" in
+  status)
+    printf '%s\n' \
+      'Status: Connected' \
+      'Server: AE#44 in Dubai, United Arab Emirates' \
+      'Load: 28%' \
+      'Protocol: WireGuard'
+    ;;
+  info)
+    if [[ "${PROTONVPN_FAKE_SIGNED_OUT:-0}" == "1" ]]; then
+      printf "Account: 'None'\n"
+    else
+      printf "Account: 'integration-test@invalid'\nPlan: %s\n" "${PROTONVPN_FAKE_PLAN:-Plus}"
+    fi
+    ;;
+  connect)
+    printf 'Connected\n'
+    ;;
+  disconnect)
+    printf 'Disconnected\n'
+    ;;
+  signin)
+    if [[ "${PROTONVPN_FAKE_SIGNIN_RESULT:-failure}" == "success" ]]; then
+      printf 'Signed in\n'
+    else
+      printf 'Authentication failed\n' >&2
+      exit 4
+    fi
+    ;;
+  countries)
+    printf '%s\n' 'Code  Country' 'AE    United Arab Emirates' 'CH    Switzerland' 'NL    Netherlands'
+    ;;
+  cities)
+    printf '%s\n' 'City  Features' 'Dubai P2P' 'Abu Dhabi Standard'
+    ;;
+  config)
+    if [[ "${PROTONVPN_FAKE_STALE_SESSION:-0}" == "1" ]]; then
+      printf "Error: Authentication required to view feature status. Please sign in\n" >&2
+      exit 2
+    fi
+    if [[ "${2:-}" == "list" ]]; then
+      printf '%s\n' \
+        'NetShield: malware-ads-trackers' \
+        'Kill Switch: standard' \
+        'IPv6: on' \
+        'Custom DNS: off' \
+        'Port Forwarding: off' \
+        'Moderate NAT: on' \
+        'VPN Accelerator: on' \
+        'Anonymous Crash Reports: off'
+    elif [[ "${2:-}" == "set" ]]; then
+      if [[ -n "${PROTONVPN_FAKE_FAIL_SETTING:-}" && "${3:-}" == "$PROTONVPN_FAKE_FAIL_SETTING" ]]; then
+        printf 'Simulated configuration failure\n' >&2
+        exit 2
+      fi
+      printf 'Configuration updated\n'
+    else
+      printf 'Unsupported config operation\n' >&2
+      exit 2
+    fi
+    ;;
+  signout)
+    printf 'Signed out\n'
+    ;;
+  --version|-v)
+    printf 'Proton VPN CLI 1.0.1-test\n'
+    ;;
+  *)
+    printf 'Unsupported fake command: %s\n' "${*:-<none>}" >&2
+    exit 2
+    ;;
+esac

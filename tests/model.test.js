@@ -34,8 +34,28 @@ test("parses a disconnected status", () => {
 test("classifies authentication failures", () => {
   assert.deepEqual(model.classifyFailure("Authentication required. Please sign in."), {
     needsLogin: true,
+    category: "authentication",
+    retryable: false,
     message: "Sign in from a terminal first"
   })
+})
+
+test("classifies server-route and stale-cache failures clearly", () => {
+  assert.equal(model.classifyFailure("Connection failed. Try connecting to a different server").category, "server-route")
+  assert.equal(model.classifyFailure("Server list is outdated, updating server list").category, "server-cache")
+  assert.equal(model.classifyFailure("Connection timed out").retryable, true)
+})
+
+test("migrates persisted settings without losing user values", () => {
+  const migrated = model.migrateSettings({ favorites: [{ mode: "Fastest" }], custom: "keep" })
+  assert.equal(migrated.version, 1)
+  assert.equal(migrated.changed, true)
+  assert.deepEqual(migrated.settings.favorites, [{ mode: "Fastest" }])
+  assert.equal(migrated.settings.custom, "keep")
+  assert.deepEqual(migrated.settings.trustedNetworks, [])
+  assert.equal(model.migrateSettings(migrated.settings).changed, false)
+  const future = { settingsVersion: 2, favorites: [{ mode: "Random" }], futureSetting: true }
+  assert.deepEqual(model.migrateSettings(future), { changed: false, version: 2, settings: future })
 })
 
 test("builds the supported Omarchy CLI installer command", () => {
@@ -49,17 +69,17 @@ test("builds the supported Omarchy CLI installer command", () => {
   })
 })
 
-test("opens interactive Proton sign-in in an Omarchy terminal", () => {
-  assert.deepEqual(model.signinPlan("omarchy", "protonvpn", "user@proton.me"), {
+test("opens persistent interactive Proton sign-in in an Omarchy terminal", () => {
+  assert.deepEqual(model.signinPlan("omarchy", "protonvpn", "user@proton.me", "/plugin/protonvpn-signin-terminal"), {
     ok: true,
     error: "",
     command: [
       "omarchy", "launch", "terminal", "--",
-      "protonvpn", "signin", "user@proton.me"
+      "/plugin/protonvpn-signin-terminal", "protonvpn", "user@proton.me"
     ]
   })
 
-  assert.equal(model.signinPlan("omarchy", "protonvpn", "").error, "Enter your Proton username")
+  assert.equal(model.signinPlan("omarchy", "protonvpn", "", "/plugin/protonvpn-signin-terminal").error, "Enter your Proton username")
 })
 
 test("parses countries while ignoring refresh chatter and table headers", () => {
@@ -108,7 +128,21 @@ test("supports every official quick-connect selector", () => {
   assert.deepEqual(model.connectPlan("protonvpn", "fastest", "", "none").command, ["protonvpn", "connect"])
   assert.deepEqual(model.connectPlan("protonvpn", "random", "", "none").command, ["protonvpn", "connect", "--random"])
   assert.deepEqual(model.connectPlan("protonvpn", "city", "New York", "none").command, ["protonvpn", "connect", "--city", "New York"])
-  assert.deepEqual(model.connectPlan("protonvpn", "server", "IT#23", "secure core").command, ["protonvpn", "connect", "IT#23", "--securecore"])
+  assert.deepEqual(model.connectPlan("protonvpn", "server", "IT#23", "secure core").command, ["protonvpn", "connect", "IT#23"])
+})
+
+test("specific servers always use the single official CLI connection path", () => {
+  assert.deepEqual(model.connectPlan("protonvpn", "server", "CH#242", "p2p"), {
+    ok: true,
+    error: "",
+    command: ["protonvpn", "connect", "CH#242"]
+  })
+})
+
+test("server IDs cannot be interpreted as CLI options", () => {
+  assert.deepEqual(model.connectPlan("protonvpn", "server", "--help", "none"), {
+    ok: false, error: "Server ID cannot start with -", command: []
+  })
 })
 
 test("requires a target for scoped selectors", () => {
@@ -245,6 +279,15 @@ test("detects Proton DNS without building a mutating command", () => {
   ), {
     ok: true,
     needed: true,
+    error: ""
+  })
+
+  assert.deepEqual(model.dnsCompatibilityProbe(
+    "Link 48 (proton0)\n    Protocols: +DefaultRoute -DNSOverTLS\n    DNS Servers: 10.2.0.1 2a07:b944::2:1\n",
+    "proton0"
+  ), {
+    ok: true,
+    needed: false,
     error: ""
   })
 

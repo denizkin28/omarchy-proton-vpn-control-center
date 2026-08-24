@@ -45,9 +45,38 @@ function parseStatus(raw) {
 function classifyFailure(raw) {
   var text = clean(raw).replace(/\s+/g, " ")
   var needsLogin = /authentication required|please sign in|not signed in/i.test(text)
-  var message = needsLogin ? "Sign in from a terminal first" : (text || "Proton VPN command failed")
+  var category = needsLogin ? "authentication" : "command"
+  var retryable = false
+  var message = text || "Proton VPN command failed"
+  if (needsLogin) message = "Sign in from a terminal first"
+  else if (/server list is outdated|updating server list/i.test(text)) {
+    category = "server-cache"; retryable = true
+    message = "Proton is refreshing its server list. Retry after the refresh completes."
+  } else if (/connection failed|different server/i.test(text)) {
+    category = "server-route"; retryable = true
+    message = "This server and protocol route failed. Try another server or WireGuard."
+  } else if (/network|resolve|timed out|unreachable/i.test(text)) {
+    category = "network"; retryable = true
+    message = "The network path is unavailable. Check connectivity and retry."
+  }
   if (message.length > 180) message = message.substring(0, 177) + "…"
-  return { needsLogin: needsLogin, message: message }
+  return { needsLogin: needsLogin, category: category, retryable: retryable, message: message }
+}
+
+function migrateSettings(raw) {
+  var source = raw && typeof raw === "object" ? raw : {}
+  var version = Number(source.settingsVersion || 0)
+  var next = {}
+  for (var key in source) next[key] = source[key]
+  if (version < 1) {
+    if (!(next.favorites instanceof Array)) next.favorites = []
+    if (!(next.profiles instanceof Array)) next.profiles = []
+    if (!(next.serverHistory instanceof Array)) next.serverHistory = []
+    if (!(next.trustedNetworks instanceof Array)) next.trustedNetworks = []
+    if (next.autoConnectProfile === undefined) next.autoConnectProfile = ""
+    next.settingsVersion = 1
+  }
+  return { changed: version < 1, version: Math.max(1, version), settings: next }
 }
 
 function installCliPlan(omarchyCommand) {
@@ -61,7 +90,7 @@ function installCliPlan(omarchyCommand) {
   }
 }
 
-function signinPlan(omarchyCommand, cliCommand, username) {
+function signinPlan(omarchyCommand, cliCommand, username, signinHelper) {
   var account = clean(username)
   if (!account) return { ok: false, error: "Enter your Proton username", command: [] }
   return {
@@ -70,7 +99,8 @@ function signinPlan(omarchyCommand, cliCommand, username) {
     command: [
       clean(omarchyCommand) || "omarchy",
       "launch", "terminal", "--",
-      clean(cliCommand) || "protonvpn", "signin", account
+      clean(signinHelper) || "protonvpn-signin-terminal",
+      clean(cliCommand) || "protonvpn", account
     ]
   }
 }
@@ -134,10 +164,15 @@ function connectPlan(cliCommand, mode, target, feature) {
     command.push("--city", selectedTarget)
   } else if (selectedMode === "server") {
     if (!selectedTarget) return { ok: false, error: "Enter a server ID", command: [] }
+    if (selectedTarget.charAt(0) === "-") return { ok: false, error: "Server ID cannot start with -", command: [] }
     command.push(selectedTarget)
   } else if (selectedMode !== "fastest") {
     return { ok: false, error: "Unknown connection mode", command: [] }
   }
+
+  // A specific server connection is deliberately always `connect SERVER_ID`.
+  // Discovery metadata must never alter the connection path.
+  if (selectedMode === "server") return { ok: true, error: "", command: command }
 
   if (selectedFeature === "p2p") command.push("--p2p")
   else if (selectedFeature === "secure core") command.push("--securecore")
@@ -301,9 +336,10 @@ function dnsCompatibilityProbe(rawDnsState, vpnInterface) {
 
   var dnsState = String(rawDnsState || "")
   var usesInternalDns = /(^|\s)(10\.2\.0\.1|2a07:b944::2:1)(\s|$)/i.test(dnsState)
+  var dotExplicitlyDisabled = /Protocols:.*(?:^|\s)-DNSOverTLS(?:\s|$)/im.test(dnsState)
   return {
     ok: true,
-    needed: usesInternalDns,
+    needed: usesInternalDns && !dotExplicitlyDisabled,
     error: ""
   }
 }
@@ -329,6 +365,7 @@ if (typeof module !== "undefined") {
   module.exports = {
     parseStatus: parseStatus,
     classifyFailure: classifyFailure,
+    migrateSettings: migrateSettings,
     installCliPlan: installCliPlan,
     signinPlan: signinPlan,
     parseCountries: parseCountries,

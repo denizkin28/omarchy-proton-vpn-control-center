@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -u
+
+cli=${1:-protonvpn}
+username=${2:-}
+
+# Some Wayland terminal launchers detach by sending SIGHUP to their original
+# process group. Keep Proton's interactive credential prompt alive through that
+# handoff; ignored signal dispositions survive into the child process.
+trap '' HUP
+
+printf '\033]0;Proton VPN Sign In\007'
+printf '\033[1;36mProton VPN sign in\033[0m\n\n'
+printf 'Your password and two-factor code stay inside Proton’s official CLI.\n\n'
+printf '\033[1;33mPassword input is hidden; type it and press Enter.\033[0m\n'
+printf '\033[1;33mAfter password or 2FA, Proton may be silent for several seconds while verifying.\033[0m\n'
+printf '\033[1;33mThe window is still working—keep it open and wait for the next prompt or result.\033[0m\n\n'
+
+# Proton can retain a username after its authenticated session has expired.
+# In that state `signin` says "already signed in" while protected commands say
+# "authentication required". Clear only that unusable CLI session first.
+account_info=$("$cli" info 2>&1 || true)
+config_info=$("$cli" config list 2>&1 || true)
+if ! grep -Eqi "^Account:[[:space:]]*['\"]?None['\"]?[[:space:]]*$" <<<"$account_info" \
+    && grep -Eqi 'authentication required|please sign in|not signed in' <<<"$config_info"; then
+  printf 'The stored CLI session has expired; resetting it before sign-in…\n\n'
+  "$cli" signout >/dev/null 2>&1 || true
+fi
+
+"$cli" signin "$username"
+status=$?
+
+printf '\n'
+if (( status == 0 )); then
+  printf '\033[1;32mSign-in completed. You can close this terminal.\033[0m\n'
+  sleep 3
+else
+  printf '\033[1;31mSign-in did not complete (exit %d).\033[0m\n' "$status"
+  printf 'Review the message above, then press Enter to close this terminal.\n'
+  read -r _ || true
+fi
+
+exit "$status"

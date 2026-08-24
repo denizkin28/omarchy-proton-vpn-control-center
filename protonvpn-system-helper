@@ -1,0 +1,667 @@
+#!/usr/bin/env python3
+"""Versioned JSON bridge for Proton VPN health and optional integrations."""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+import time
+from typing import Any
+
+VERSION = "1.2.0"
+SCHEMA = 1
+ALLOWED_SETTINGS = {
+    "netshield", "kill-switch", "ipv6", "custom-dns", "port-forwarding",
+    "moderate-nat", "vpn-accelerator", "anonymous-crash-reports",
+}
+
+
+def emit(ok: bool, **data: Any) -> int:
+    print(json.dumps({"ok": ok, "schemaVersion": SCHEMA, "helperVersion": VERSION, **data},
+                     separators=(",", ":")))
+    return 0 if ok else 2
+
+
+def run(command: list[str], timeout: int = 10) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, text=True, capture_output=True, timeout=timeout, check=False)
+
+
+def connection_state(cli: str = "protonvpn") -> dict[str, Any]:
+    completed = run([cli, "status"])
+    text = completed.stdout + "\n" + completed.stderr
+    connected = bool(re.search(r"^Status:\s*Connected\s*$", text, re.M | re.I))
+    server = re.search(r"^Server:\s*([^\s]+)", text, re.M | re.I)
+    return {"connected": connected, "server": server.group(1) if server else "", "raw": text.strip()}
+
+
+def command_error(completed: subprocess.CompletedProcess[str], fallback: str) -> str:
+    return (completed.stderr or completed.stdout).strip() or fallback
+
+
+def resolve_user_tier(cli: str) -> int:
+    """Translate the authenticated CLI plan into Proton's settings tier."""
+    completed = run([cli, "info"], timeout=15)
+    match = re.search(r"^Plan:\s*(.+?)\s*$", completed.stdout, re.M | re.I)
+    if not match:
+        return 2  # Preserve existing settings if an older CLI omits Plan.
+    plan = match.group(1).strip().lower()
+    if plan in {"free", "basic"}:
+        return 0
+    if "visionary" in plan:
+        return 3
+    return 2
+
+
+def mark_intentional_disconnect() -> None:
+    """Tell every widget instance that an upcoming disconnect is deliberate."""
+    state_dir = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+    state_dir.mkdir(parents=True, exist_ok=True)
+    marker = state_dir / "protonvpn-intentional-disconnect"
+    temporary = marker.with_suffix(".tmp")
+    temporary.write_text(str(time.time()))
+    temporary.replace(marker)
+
+
+def health() -> int:
+    interface = Path("/sys/class/net/proton0")
+    route = run(["ip", "route", "get", "1.1.1.1"])
+    dns = run(["resolvectl", "status", "proton0"])
+    state = {
+        "interfaceUp": interface.exists(),
+        "routeThroughVpn": bool(re.search(r"\bdev proton0\b", route.stdout)),
+        "protonDns": bool(re.search(r"\b(?:10\.2\.0\.1|2a07:b944::2:1)\b", dns.stdout, re.I)),
+        "rxBytes": 0,
+        "txBytes": 0,
+    }
+    for key, filename in (("rxBytes", "rx_bytes"), ("txBytes", "tx_bytes")):
+        try:
+            state[key] = int((interface / "statistics" / filename).read_text().strip())
+        except (OSError, ValueError):
+            pass
+    state["healthy"] = state["interfaceUp"] and state["routeThroughVpn"] and state["protonDns"]
+    return emit(True, health=state)
+
+
+def network() -> int:
+    route = run(["ip", "route", "show", "default"])
+    match = re.search(r"\bdev\s+(\S+)", route.stdout)
+    device = match.group(1) if match else ""
+    connection = ""
+    kind = ""
+    if device:
+        info = run(["nmcli", "-t", "-f", "GENERAL.CONNECTION,GENERAL.TYPE", "device", "show", device])
+        for line in info.stdout.splitlines():
+            if line.startswith("GENERAL.CONNECTION:"):
+                connection = line.split(":", 1)[1]
+            elif line.startswith("GENERAL.TYPE:"):
+                kind = line.split(":", 1)[1]
+    return emit(True, network={"device": device, "connection": connection, "type": kind,
+                               "online": bool(device and connection)})
+
+
+def account(args: argparse.Namespace) -> int:
+    completed = run([args.cli, "info"], timeout=15)
+    text = completed.stdout + "\n" + completed.stderr
+    if completed.returncode != 0:
+        return emit(False, error=command_error(completed, "Could not read Proton account state"))
+    identity_present = not bool(re.search(r"^Account:\s*['\"]?None['\"]?\s*$", text, re.M | re.I))
+    session_probe = run([args.cli, "config", "list"], timeout=20)
+    probe_text = session_probe.stdout + "\n" + session_probe.stderr
+    authentication_required = bool(re.search(
+        r"authentication required|please sign in|not signed in", probe_text, re.I))
+    signed_in = identity_present and not authentication_required
+    print(json.dumps({"ok": True, "schemaVersion": SCHEMA, "helperVersion": VERSION,
+                      "account": {"signedIn": signed_in, "identityPresent": identity_present,
+                                  "sessionValid": not authentication_required,
+                                  "reason": "authentication-required" if authentication_required else ""}},
+                     separators=(",", ":")))
+    # Distinct exit codes make QML classification atomic even if its stdout
+    # collector is delivered after Process.onExited: 3=no identity, 4=stale
+    # retained identity whose authenticated session is unusable.
+    if signed_in:
+        return 0
+    return 4 if identity_present else 3
+
+
+def port_status(args: argparse.Namespace) -> int:
+    import shutil
+
+    active = run(["systemctl", "--user", "is-active", "proton-port-forward.service"])
+    unit = run(["systemctl", "--user", "cat", "proton-port-forward.service"])
+    config = run([args.cli, "config", "list"])
+    connected = connection_state(args.cli)
+    state_path = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "protonvpn-port-forward.json"
+    state: dict[str, Any] = {}
+    try:
+        state = json.loads(state_path.read_text())
+    except (OSError, ValueError):
+        pass
+    return emit(True, portForward={
+        "active": active.stdout.strip() == "active",
+        "serviceInstalled": unit.returncode == 0,
+        "natPmpInstalled": shutil.which("natpmpc") is not None,
+        "configured": bool(re.search(r"^port-forwarding\s+on\s*$", config.stdout, re.M | re.I)),
+        "connected": connected["connected"],
+        "requirements": "Paid Proton plan, port forwarding enabled, and a connected P2P-capable server",
+        **state,
+    })
+
+
+def installed_apps() -> int:
+    from gi.repository import Gio
+    import shlex
+    import shutil
+
+    values = []
+    seen = set()
+    for app in Gio.AppInfo.get_all():
+        if not app.should_show() or app.get_id() == "com.protonvpn.www.desktop":
+            continue
+        command_line = app.get_commandline() or ""
+        executable = app.get_executable() or ""
+        try:
+            arguments = shlex.split(command_line)
+        except ValueError:
+            arguments = []
+        if arguments and arguments[0] in ("flatpak", "/usr/bin/flatpak"):
+            executable = " ".join(value for value in arguments if not value.startswith(("%", "@@")))
+        elif executable and not executable.startswith("/"):
+            executable = shutil.which(executable) or ""
+        if not executable or executable in seen:
+            continue
+        seen.add(executable)
+        icon = app.get_icon().to_string() if app.get_icon() else ""
+        values.append({"name": app.get_display_name(), "executable": executable, "icon": icon or ""})
+    values.sort(key=lambda value: value["name"].casefold())
+    return emit(True, applications=values)
+
+
+def diagnostics(args: argparse.Namespace) -> int:
+    """Write a redacted, local-only support report."""
+    state_dir = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+    report_dir = state_dir / "protonvpn-native"
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    def redact(value: str) -> str:
+        value = re.sub(r"[\w.+-]+@[\w.-]+", "<redacted-email>", value)
+        value = value.replace(str(Path.home()), "<home>")
+        value = re.sub(r"(?<![\w:])(?:\d{1,3}\.){3}\d{1,3}(?![\w:])", "<redacted-ipv4>", value)
+        value = re.sub(r"(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}(?![0-9A-Fa-f:])",
+                       "<redacted-mac>", value)
+        return re.sub(r"(?<![0-9A-Fa-f:])(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}(?![0-9A-Fa-f:])",
+                      "<redacted-ipv6>", value)
+
+    commands = {
+        "version": [args.cli, "--version"],
+        "status": [args.cli, "status"],
+        "configuration": [args.cli, "config", "list"],
+        "networkManager": ["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"],
+    }
+    report: dict[str, Any] = {
+        "reportVersion": 1,
+        "helperVersion": VERSION,
+        "generatedAt": int(time.time()),
+        "commands": {},
+    }
+    for name, command in commands.items():
+        completed = run(command, timeout=15)
+        report["commands"][name] = {
+            "exitCode": completed.returncode,
+            "output": redact((completed.stdout + completed.stderr).strip()),
+        }
+    journal = run(["journalctl", "--user", "-n", "250", "--no-pager"], timeout=15)
+    report["shellLog"] = redact("\n".join(
+        line for line in journal.stdout.splitlines()
+        if re.search(r"protonvpn|denizkin\.protonvpn|Panel\.qml|Service\.qml", line, re.I)
+    ))[-30000:]
+    path = report_dir / f"diagnostics-{time.strftime('%Y%m%d-%H%M%S')}.json"
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(report, indent=2) + "\n")
+    os.chmod(temporary, 0o600)
+    temporary.replace(path)
+    return emit(True, diagnostics={"path": str(path), "redacted": True})
+
+
+def settings_get(args: argparse.Namespace) -> int:
+    from proton.vpn.connection import VPNConnection
+    from proton.vpn.core.api import ProtonVPNAPI
+    from proton.vpn.core.settings import SettingsPersistence
+
+    settings = SettingsPersistence().get(user_tier=resolve_user_tier(args.cli))
+    registry = ProtonVPNAPI.create_registry()
+    protocols = [{"value": cls.protocol, "label": cls.ui_protocol}
+                 for cls in registry.iter(VPNConnection)]
+    return emit(True, coreSettings={
+        "protocol": settings.protocol,
+        "killSwitch": int(settings.killswitch),
+        "protocols": protocols,
+        "advancedKillSwitchAvailable": True,
+        "splitTunnelingEnabled": bool(settings.features.split_tunneling.enabled),
+        "unavailableProtocols": [{
+            "value": "stealth",
+            "label": "Stealth",
+            "reason": "Not exposed by the installed official Proton VPN CLI/backend registry",
+        }],
+    })
+
+
+async def settings_set(args: argparse.Namespace) -> int:
+    from proton.vpn.core.settings import SettingsPersistence
+    from proton.vpn.killswitch.interface import KillSwitch
+
+    status = connection_state(getattr(args, "cli", "protonvpn"))
+    if status["connected"]:
+        return emit(False, error="Disconnect Proton VPN before changing protocol or advanced kill switch")
+    persistence = SettingsPersistence()
+    settings = persistence.get(user_tier=resolve_user_tier(args.cli))
+    if args.setting == "protocol":
+        available = {item["value"] for item in settings_capabilities()["protocols"]}
+        if args.value not in available:
+            return emit(False, error="Protocol is unavailable in the installed Proton backend")
+        if args.value != "wireguard" and settings.features.split_tunneling.enabled:
+            return emit(False, error="Disable split tunnelling before selecting a non-WireGuard protocol")
+        if int(settings.killswitch) == 2:
+            return emit(False, error="Disable advanced kill switch before changing protocol")
+        settings.protocol = args.value
+        persistence.save(settings)
+        return emit(True, coreSettings={"protocol": settings.protocol})
+    state = {"off": 0, "standard": 1, "advanced": 2}[args.value]
+    if state and settings.features.split_tunneling.enabled:
+        return emit(False, error="Disable split tunnelling before enabling kill switch")
+    backend = KillSwitch.get(protocol=settings.protocol)()
+    if state == 2:
+        await backend.enable(permanent=True)
+        await backend.disable_ipv6_leak_protection()
+    else:
+        await backend.disable()
+        await backend.disable_ipv6_leak_protection()
+    settings.killswitch = state
+    persistence.save(settings)
+    return emit(True, coreSettings={"killSwitch": state})
+
+
+def settings_capabilities() -> dict[str, Any]:
+    from proton.vpn.connection import VPNConnection
+    from proton.vpn.core.api import ProtonVPNAPI
+    registry = ProtonVPNAPI.create_registry()
+    return {"protocols": [{"value": cls.protocol, "label": cls.ui_protocol}
+                           for cls in registry.iter(VPNConnection)]}
+
+
+def recover(args: argparse.Namespace) -> int:
+    state_dir = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+    state_dir.mkdir(parents=True, exist_ok=True)
+    intentional_path = state_dir / "protonvpn-intentional-disconnect"
+    try:
+        if time.time() - float(intentional_path.read_text().strip()) < 45:
+            return emit(False, error="Manual disconnect respected", skipped=True)
+    except (OSError, ValueError):
+        pass
+    lock_path = state_dir / "protonvpn-recovery.lock"
+    import fcntl
+    with lock_path.open("a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        lock.seek(0)
+        try:
+            last_attempt = float(lock.read().strip() or 0)
+        except ValueError:
+            last_attempt = 0
+        if time.time() - last_attempt < args.cooldown:
+            return emit(False, error="Recovery cooldown is active", skipped=True)
+        lock.seek(0); lock.truncate(); lock.write(str(time.time())); lock.flush()
+        status = run([args.cli, "status"])
+        if re.search(r"^Status:\s*Connected\s*$", status.stdout, re.M | re.I):
+            return emit(True, recovered=True, server="already-connected")
+        attempts = []
+        if args.server:
+            attempts.append([args.cli, "connect", args.server])
+        attempts.append([args.cli, "connect"])
+        for command in attempts:
+            completed = run(command, timeout=90)
+            if completed.returncode == 0:
+                return emit(True, recovered=True, server=command[-1] if len(command) > 2 else "fastest")
+        return emit(False, error="Could not restore the VPN connection", recovered=False)
+
+
+def disconnect(args: argparse.Namespace) -> int:
+    mark_intentional_disconnect()
+    completed = run([args.cli, "disconnect"], timeout=60)
+    if completed.returncode != 0:
+        return emit(False, error=(completed.stderr or completed.stdout).strip() or "Disconnect failed")
+    return emit(True, disconnected=True)
+
+
+async def split_get(args: argparse.Namespace) -> int:
+    from proton.vpn.core.settings import SettingsPersistence
+    from proton.vpn.split_tunneling import SplitTunneling
+
+    settings = SettingsPersistence().get(user_tier=resolve_user_tier(args.cli)).features.split_tunneling
+    client = await SplitTunneling.get(os.getuid())
+    backend = await client.get_config() if client else None
+    return emit(True, splitTunneling={
+        "available": client is not None,
+        "availabilityReason": "" if client is not None else
+            "The official Proton split-tunnelling D-Bus service is not running or supported by this installation",
+        "enabled": bool(settings.enabled),
+        "mode": settings.mode.value,
+        "exclude": settings.exclude.to_dict(),
+        "include": settings.include.to_dict(),
+        "backend": backend.to_dict() if backend else None,
+    })
+
+
+async def split_set(args: argparse.Namespace) -> int:
+    from proton.vpn.core.settings import SettingsPersistence, SplitTunnelingConfig, SplitTunnelingMode
+    from proton.vpn.split_tunneling import SplitTunneling
+
+    if connection_state(getattr(args, "cli", "protonvpn"))["connected"]:
+        return emit(False, error="Disconnect Proton VPN before changing split tunnelling")
+    mode = SplitTunnelingMode(args.mode)
+    apps = [str(Path(value).expanduser()) for value in json.loads(args.apps)]
+    ips = [str(value).strip() for value in json.loads(args.ips)]
+    if any(not value.startswith("/") for value in apps):
+        return emit(False, error="Application paths must be absolute")
+    persistence = SettingsPersistence()
+    settings = persistence.get(user_tier=resolve_user_tier(args.cli))
+    split = settings.features.split_tunneling
+    split.enabled = args.enabled == "on"
+    split.mode = mode
+    config = SplitTunnelingConfig(mode=mode, app_paths=apps, ip_ranges=ips)
+    split.config_by_mode[mode.value] = config
+    persistence.save(settings)
+    client = await SplitTunneling.get(os.getuid())
+    if not client:
+        return emit(False, error="Proton split-tunnelling service is unavailable")
+    if split.enabled:
+        await client.set_config(config)
+    else:
+        await client.clear_config()
+    return emit(True, splitTunneling={"enabled": split.enabled, "mode": mode.value,
+                                      "appPaths": apps, "ipRanges": ips})
+
+
+async def restore_transaction_snapshot(persistence: Any, snapshot: dict[str, Any]) -> str:
+    """Restore persisted settings and backend state; return an incomplete-rollback reason."""
+    from proton.vpn.killswitch.interface import KillSwitch
+
+    rollback = persistence.get(user_tier=snapshot["userTier"])
+    try:
+        active_backend = KillSwitch.get(protocol=rollback.protocol)()
+        await active_backend.disable()
+        await active_backend.disable_ipv6_leak_protection()
+    except Exception:
+        pass
+
+    rollback.protocol = snapshot["protocol"]
+    # Persist off before touching the permanent backend. Never claim advanced
+    # protection is enabled until the matching backend confirms it.
+    rollback.killswitch = 0
+    rollback.features.split_tunneling.enabled = snapshot["splitEnabled"]
+    persistence.save(rollback)
+
+    incomplete = ""
+    try:
+        from proton.vpn.core.settings import SplitTunnelingConfig, SplitTunnelingMode
+        from proton.vpn.split_tunneling import SplitTunneling
+        split_client = await SplitTunneling.get(os.getuid())
+        if split_client:
+            selected = snapshot["splitInclude"] if snapshot["splitMode"] == "include" else snapshot["splitExclude"]
+            restored_config = SplitTunnelingConfig(
+                mode=SplitTunnelingMode(snapshot["splitMode"]),
+                app_paths=selected.get("app_paths", []), ip_ranges=selected.get("ip_ranges", []))
+            if snapshot["splitEnabled"]:
+                await split_client.set_config(restored_config)
+            else:
+                await split_client.clear_config()
+    except Exception as error:
+        incomplete = f"split tunnelling backend restore failed: {error}"
+
+    if snapshot["killSwitch"] == 2:
+        try:
+            restored_backend = KillSwitch.get(protocol=snapshot["protocol"])()
+            await restored_backend.enable(permanent=True)
+            await restored_backend.disable_ipv6_leak_protection()
+            rollback.killswitch = 2
+            persistence.save(rollback)
+        except Exception as error:
+            reason = f"advanced kill switch backend restore failed: {error}"
+            incomplete = f"{incomplete}; {reason}" if incomplete else reason
+    else:
+        rollback.killswitch = snapshot["killSwitch"]
+        persistence.save(rollback)
+    return incomplete
+
+
+async def transaction_set(args: argparse.Namespace) -> int:
+    """Apply a disconnected-only setting and restore the previous connection.
+
+    Every failure attempts rollback and reconnection. Advanced kill switch additionally
+    requires a known current server so it never depends on a server-list refresh while
+    traffic is blocked.
+    """
+    import contextlib
+    import io
+
+    before = connection_state(args.cli)
+    cache_path = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "Proton/VPN/serverlist.json"
+    cache_age = time.time() - cache_path.stat().st_mtime if cache_path.exists() else None
+    advanced = args.operation == "settings" and args.setting == "kill-switch" and args.value == "advanced"
+    if advanced and before["connected"] and (not before["server"] or cache_age is None or cache_age > 21600):
+        return emit(False, error="Refresh Proton's server list before safely enabling advanced kill switch",
+                    rolledBack=False, reconnected=True)
+
+    from proton.vpn.core.settings import SettingsPersistence
+    persistence = SettingsPersistence()
+    user_tier = resolve_user_tier(args.cli)
+    saved = persistence.get(user_tier=user_tier)
+    snapshot = {
+        "userTier": user_tier,
+        "protocol": saved.protocol,
+        "killSwitch": int(saved.killswitch),
+        "splitEnabled": bool(saved.features.split_tunneling.enabled),
+        "splitMode": saved.features.split_tunneling.mode.value,
+        "splitExclude": saved.features.split_tunneling.exclude.to_dict(),
+        "splitInclude": saved.features.split_tunneling.include.to_dict(),
+    }
+
+    plan = {"connected": before["connected"], "server": before["server"],
+            "willDisconnect": before["connected"], "willReconnect": before["connected"],
+            "rollbackAvailable": True, "serverCacheAgeSec": int(cache_age) if cache_age is not None else None}
+    if args.dry_run:
+        return emit(True, dryRun=True, transaction=plan)
+
+    steps: list[str] = []
+    if before["connected"]:
+        mark_intentional_disconnect()
+        completed = run([args.cli, "disconnect"], timeout=60)
+        if completed.returncode != 0:
+            return emit(False, error=command_error(completed, "Could not disconnect for the settings change"),
+                        rolledBack=False, reconnected=True, steps=steps)
+        steps.append("disconnected")
+
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        if args.operation == "settings":
+            nested = argparse.Namespace(setting=args.setting, value=args.value, cli=args.cli)
+            result_code = await settings_set(nested)
+        else:
+            nested = argparse.Namespace(enabled=args.enabled, mode=args.mode, apps=args.apps,
+                                        ips=args.ips, cli=args.cli)
+            result_code = await split_set(nested)
+    try:
+        detail = json.loads(output.getvalue())
+    except ValueError:
+        detail = {"error": "Settings backend returned invalid data"}
+
+    if result_code == 0:
+        steps.append("setting-applied")
+        if before["connected"]:
+            reconnect = run([args.cli, "connect", before["server"]] if before["server"] else
+                            [args.cli, "connect"], timeout=90)
+            if reconnect.returncode == 0:
+                steps.append("reconnected")
+                return emit(True, transaction={"changed": True, "reconnected": True,
+                                                "server": before["server"], "steps": steps})
+            failure = command_error(reconnect, "Reconnect failed")
+        else:
+            return emit(True, transaction={"changed": True, "reconnected": False, "steps": steps})
+    else:
+        failure = str(detail.get("error", "Settings change failed"))
+
+    rollback_error = await restore_transaction_snapshot(persistence, snapshot)
+    steps.append("rolled-back")
+    reconnected = False
+    if before["connected"]:
+        reconnect = run([args.cli, "connect", before["server"]] if before["server"] else
+                        [args.cli, "connect"], timeout=90)
+        reconnected = reconnect.returncode == 0
+        if reconnected:
+            steps.append("reconnected-after-rollback")
+    if rollback_error:
+        failure = f"{failure}; rollback incomplete: {rollback_error}"
+    return emit(False, error=failure, rolledBack=not bool(rollback_error),
+                rollbackError=rollback_error, reconnected=reconnected, steps=steps)
+
+
+def profile_apply(args: argparse.Namespace) -> int:
+    try:
+        profile = json.loads(args.profile)
+    except ValueError as error:
+        return emit(False, error=f"Invalid profile JSON: {error}")
+    settings = profile.get("settings", {})
+    if not isinstance(settings, dict) or any(key not in ALLOWED_SETTINGS for key in settings):
+        return emit(False, error="Profile contains unsupported settings")
+    commands: list[list[str]] = []
+    before = connection_state(args.cli)
+    disconnected_for_settings = before["connected"] and bool(settings)
+    if disconnected_for_settings:
+        mark_intentional_disconnect()
+        commands.append([args.cli, "disconnect"])
+    for key, value in settings.items():
+        selected = str(value).strip().lower()
+        if not selected or "upgrade to enable" in selected:
+            continue
+        command = [args.cli, "config", "set", key, selected]
+        if key == "custom-dns" and selected == "on":
+            dns = str(profile.get("customDns", "")).strip()
+            if not dns:
+                continue
+            command.extend(["--dns", dns])
+        commands.append(command)
+    mode = str(profile.get("mode", "Fastest"))
+    target = str(profile.get("target", ""))
+    feature = str(profile.get("feature", "None"))
+    command = [args.cli, "connect"]
+    if mode.lower() == "server":
+        command.append(target)
+    elif mode.lower() == "country":
+        command.extend(["--country", target])
+    elif mode.lower() == "city":
+        command.extend(["--city", target])
+    elif mode.lower() == "random":
+        command.append("--random")
+    if mode.lower() != "server":
+        feature_flag = {"p2p": "--p2p", "secure core": "--securecore", "tor": "--tor"}.get(feature.lower())
+        if feature_flag:
+            command.append(feature_flag)
+    commands.append(command)
+    results = []
+    for item in commands:
+        completed = run(item, timeout=90)
+        results.append({"command": item[1:3], "exitCode": completed.returncode})
+        if completed.returncode != 0:
+            reconnected = False
+            if disconnected_for_settings and item[1] != "disconnect":
+                reconnect = run([args.cli, "connect", before["server"]] if before["server"] else
+                                [args.cli, "connect"], timeout=90)
+                reconnected = reconnect.returncode == 0
+                results.append({"command": reconnect.args[1:3], "exitCode": reconnect.returncode,
+                                "recovery": True})
+            return emit(False, error=(completed.stderr or completed.stdout).strip() or "Profile command failed",
+                        results=results, reconnected=reconnected)
+    return emit(True, results=results)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("health")
+    sub.add_parser("network")
+    account_parser = sub.add_parser("account")
+    account_parser.add_argument("--cli", default="protonvpn")
+    port_parser = sub.add_parser("port-status")
+    port_parser.add_argument("--cli", default="protonvpn")
+    sub.add_parser("apps")
+    diagnostic = sub.add_parser("diagnostics")
+    diagnostic.add_argument("--cli", default="protonvpn")
+    settings_get_parser = sub.add_parser("settings-get")
+    settings_get_parser.add_argument("--cli", default="protonvpn")
+    split_get_parser = sub.add_parser("split-get")
+    split_get_parser.add_argument("--cli", default="protonvpn")
+    split = sub.add_parser("split-set")
+    split.add_argument("--enabled", choices=["on", "off"], required=True)
+    split.add_argument("--mode", choices=["exclude", "include"], required=True)
+    split.add_argument("--apps", default="[]")
+    split.add_argument("--ips", default="[]")
+    split.add_argument("--cli", default="protonvpn")
+    profile = sub.add_parser("profile-apply")
+    profile.add_argument("--cli", default="protonvpn")
+    profile.add_argument("--profile", required=True)
+    setting = sub.add_parser("settings-set")
+    setting.add_argument("--setting", choices=["protocol", "kill-switch"], required=True)
+    setting.add_argument("--value", required=True)
+    setting.add_argument("--cli", default="protonvpn")
+    transaction = sub.add_parser("transaction-set")
+    transaction.add_argument("--cli", default="protonvpn")
+    transaction.add_argument("--operation", choices=["settings", "split"], required=True)
+    transaction.add_argument("--setting", choices=["protocol", "kill-switch"])
+    transaction.add_argument("--value", default="")
+    transaction.add_argument("--enabled", choices=["on", "off"], default="off")
+    transaction.add_argument("--mode", choices=["exclude", "include"], default="exclude")
+    transaction.add_argument("--apps", default="[]")
+    transaction.add_argument("--ips", default="[]")
+    transaction.add_argument("--dry-run", action="store_true")
+    recovery = sub.add_parser("recover")
+    recovery.add_argument("--cli", default="protonvpn")
+    recovery.add_argument("--server", default="")
+    recovery.add_argument("--cooldown", type=int, default=120)
+    disconnect_parser = sub.add_parser("disconnect")
+    disconnect_parser.add_argument("--cli", default="protonvpn")
+    args = parser.parse_args()
+    try:
+        if args.command == "health": return health()
+        if args.command == "network": return network()
+        if args.command == "account": return account(args)
+        if args.command == "port-status": return port_status(args)
+        if args.command == "apps": return installed_apps()
+        if args.command == "diagnostics": return diagnostics(args)
+        if args.command == "settings-get": return settings_get(args)
+        if args.command == "split-get": return asyncio.run(split_get(args))
+        if args.command == "split-set": return asyncio.run(split_set(args))
+        if args.command == "transaction-set":
+            if args.operation == "settings" and (not args.setting or not args.value):
+                return emit(False, error="A setting and value are required")
+            if args.setting == "kill-switch" and args.value not in ("off", "standard", "advanced"):
+                return emit(False, error="Unsupported kill-switch state")
+            return asyncio.run(transaction_set(args))
+        if args.command == "profile-apply": return profile_apply(args)
+        if args.command == "settings-set":
+            if args.setting == "kill-switch" and args.value not in ("off", "standard", "advanced"):
+                return emit(False, error="Unsupported kill-switch state")
+            return asyncio.run(settings_set(args))
+        if args.command == "recover": return recover(args)
+        if args.command == "disconnect": return disconnect(args)
+    except Exception as error:
+        return emit(False, error=f"{type(error).__name__}: {error}")
+    return emit(False, error="Unknown command")
+
+
+if __name__ == "__main__":
+    sys.exit(main())
