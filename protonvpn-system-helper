@@ -52,8 +52,10 @@ def resolve_user_tier(cli: str) -> int:
     if not match:
         return 2  # Preserve existing settings if an older CLI omits Plan.
     plan = match.group(1).strip().lower()
-    if plan in {"free", "basic"}:
+    if plan == "free":
         return 0
+    if plan == "basic":
+        return 1
     if "visionary" in plan:
         return 3
     return 2
@@ -503,6 +505,7 @@ async def transaction_set(args: argparse.Namespace) -> int:
     if result_code == 0:
         steps.append("setting-applied")
         if before["connected"]:
+            mark_intentional_disconnect()
             reconnect = run([args.cli, "connect", before["server"]] if before["server"] else
                             [args.cli, "connect"], timeout=90)
             if reconnect.returncode == 0:
@@ -519,6 +522,7 @@ async def transaction_set(args: argparse.Namespace) -> int:
     steps.append("rolled-back")
     reconnected = False
     if before["connected"]:
+        mark_intentional_disconnect()
         reconnect = run([args.cli, "connect", before["server"]] if before["server"] else
                         [args.cli, "connect"], timeout=90)
         reconnected = reconnect.returncode == 0

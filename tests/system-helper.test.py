@@ -182,6 +182,8 @@ class SystemHelperTests(unittest.TestCase):
         fake = str(ROOT / "tests/fake-protonvpn")
         with mock.patch.dict(os.environ, {"PROTONVPN_FAKE_PLAN": "Free"}):
             self.assertEqual(helper.resolve_user_tier(fake), 0)
+        with mock.patch.dict(os.environ, {"PROTONVPN_FAKE_PLAN": "Basic"}):
+            self.assertEqual(helper.resolve_user_tier(fake), 1)
         with mock.patch.dict(os.environ, {"PROTONVPN_FAKE_PLAN": "Plus"}):
             self.assertEqual(helper.resolve_user_tier(fake), 2)
         with mock.patch.dict(os.environ, {"PROTONVPN_FAKE_PLAN": "Visionary"}):

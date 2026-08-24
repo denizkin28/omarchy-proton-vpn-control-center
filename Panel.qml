@@ -211,10 +211,11 @@ Panel {
     root.bar.shell.updateEntryInline(root.moduleName, entry)
   }
 
-  Component.onCompleted: Qt.callLater(function() {
-    vpn.settings = root.settings || ({})
-    root.migratePluginSettings()
-  })
+  Component.onCompleted: {
+    vpn.acquire(root.settings)
+    Qt.callLater(root.migratePluginSettings)
+  }
+  Component.onDestruction: vpn.release()
   onSettingsChanged: vpn.settings = root.settings || ({})
 
   function persistFavorites(next) {

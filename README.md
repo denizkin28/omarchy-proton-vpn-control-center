@@ -158,9 +158,9 @@ treated as trusted; use this convenience feature only for names you control.
 ## Controls
 
 - Left click: open or close the panel
-- Right click: connect to the fastest server or disconnect
+- Right click: connect to the fastest server, or confirm before disconnecting
 - Middle click: refresh status
-- `T`: toggle the connection while the panel is focused
+- `T`: connect, or confirm before disconnecting, while the panel is focused
 - `R`: refresh while the panel is focused
 
 ## Locations and servers

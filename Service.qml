@@ -9,6 +9,7 @@ Item {
   id: root
 
   property var settings: ({})
+  property int clientCount: 0
   property bool installed: false
   property bool installationResolved: false
   property bool connected: false
@@ -162,6 +163,15 @@ Item {
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
     return value === undefined || value === null ? fallback : value
+  }
+
+  function acquire(newSettings) {
+    settings = newSettings || ({})
+    clientCount += 1
+  }
+
+  function release() {
+    clientCount = Math.max(0, clientCount - 1)
   }
 
   function intSetting(name, fallback, min, max) {
@@ -626,6 +636,10 @@ Item {
       _retryCommand = command.slice(0)
       _retryLabel = label
       _retryMode = _actionMode
+    } else {
+      _retryCommand = []
+      _retryLabel = ""
+      _retryMode = ""
     }
     actionProcess.command = command
     actionProcess.running = true
@@ -647,7 +661,7 @@ Item {
   Timer {
     interval: root.refreshIntervalSec * 1000
     repeat: true
-    running: true
+    running: root.clientCount > 0
     triggeredOnStart: true
     onTriggered: root.refresh()
   }
@@ -669,7 +683,7 @@ Item {
   Timer {
     interval: 15000
     repeat: true
-    running: true
+    running: root.clientCount > 0
     triggeredOnStart: true
     onTriggered: { root.refreshHealth(); root.refreshNetwork() }
   }
@@ -684,7 +698,7 @@ Item {
   Timer {
     interval: 30000
     repeat: true
-    running: root.portForward.active
+    running: root.clientCount > 0 && root.portForward.active
     onTriggered: root.refreshPortForward()
   }
 
@@ -773,7 +787,7 @@ Item {
         actionProcess.running = false
         root.actionStatus = ""
         root.lastError = "Proton VPN command timed out"
-        root.lastErrorRetryable = root._retryCommand.length > 0
+        root.lastErrorRetryable = root._actionMode === "connect" && root._retryCommand.length > 0
         root._actionMode = ""
       }
     }
@@ -1022,7 +1036,7 @@ Item {
         var failure = Model.classifyFailure(stderr || stdout)
         root.needsLogin = failure.needsLogin
         root.lastError = failure.message
-        root.lastErrorRetryable = failure.retryable && root._retryCommand.length > 0
+        root.lastErrorRetryable = root._actionMode === "connect" && failure.retryable && root._retryCommand.length > 0
       }
       root._actionMode = ""
     }

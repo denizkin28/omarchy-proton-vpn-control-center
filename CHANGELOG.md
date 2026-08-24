@@ -7,6 +7,8 @@
 - Add animated connect/disconnect feedback, retryable connection actions,
   actionable health details, light-theme icon coloring, accessibility metadata,
   and confirmation for shortcut-triggered disconnects.
+- Scope retries strictly to failed connection actions and start singleton polling
+  only while at least one monitor panel is registered.
 - Harden transactional protocol, kill-switch, and split-tunnelling changes with
   intentional-disconnect coordination, guarded entry points, safe advanced
   kill-switch rollback, and reconnect-after-rollback coverage.
@@ -15,6 +17,8 @@
 - Detect the authenticated Proton plan before loading tier-sensitive settings,
   honor the configured CLI path throughout helpers, and restore the previous
   server when profile application fails.
+- Preserve legacy Basic as paid tier 1 and refresh intentional-disconnect markers
+  before long reconnect attempts.
 - Align test fixtures with the real Proton CLI output and expand model, helper,
   timeout, multi-monitor, rollback, packaging, and lifecycle coverage.
 - Package only explicitly reviewed paths and verify deterministic archive
