@@ -1759,7 +1759,7 @@ Panel {
           Text {
             visible: vpn.installed
             width: parent.width
-            text: "Left click: panel   Right click: toggle   Middle click: refresh"
+            text: "Left click: panel   Right click: connect / confirm disconnect   Middle click: refresh"
             color: root.dim
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption

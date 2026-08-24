@@ -115,6 +115,7 @@ test("primary controls expose accessibility and shortcut disconnects are confirm
   assert.match(panel, /requestConfirmation\("disconnect"/)
   assert.match(panel, /confirmKind === "disconnect" \? "Disconnect"/)
   assert.match(panel, /splitAppPicker\.activeFocus \|\| protonUsernameField\.activeFocus \|\| root\.confirmOpen/)
+  assert.match(panel, /Right click: connect \/ confirm disconnect/)
 })
 
 test("enhanced server discovery remains read-only and connects through the CLI", () => {
