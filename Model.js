@@ -90,7 +90,7 @@ function installCliPlan(omarchyCommand) {
   }
 }
 
-function signinPlan(omarchyCommand, cliCommand, username, signinHelper) {
+function signinPlan(omarchyCommand, cliCommand, username, signinHelper, resultFile, attemptToken) {
   var account = clean(username)
   if (!account) return { ok: false, error: "Enter your Proton username", command: [] }
   return {
@@ -100,6 +100,8 @@ function signinPlan(omarchyCommand, cliCommand, username, signinHelper) {
       clean(omarchyCommand) || "omarchy",
       "launch", "terminal", "--",
       clean(signinHelper) || "protonvpn-signin-terminal",
+      "--result-file", clean(resultFile),
+      "--token", clean(attemptToken),
       clean(cliCommand) || "protonvpn", account
     ]
   }

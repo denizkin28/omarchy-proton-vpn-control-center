@@ -41,7 +41,7 @@ After installation, enter your Proton username in the panel and select **Sign in
 protonvpn signin USERNAME
 ```
 
-The plugin never handles your Proton password. A small HUP-resistant terminal wrapper keeps Proton's official interactive prompt open, displays failures until you dismiss them, and lets the panel detect sign-in completion automatically.
+The plugin never handles your Proton password. A small HUP-resistant terminal wrapper keeps Proton's official interactive prompt open, displays failures until you dismiss them, and lets the panel detect success or return promptly to **Needs sign-in** after a rejected password.
 
 > [!WARNING]
 > The official Proton VPN CLI cannot run alongside the Proton VPN GUI. Headless use is also unsupported. Read [Proton's official Linux CLI guide](https://protonvpn.com/support/linux-cli) before replacing an existing GUI installation.
@@ -78,7 +78,7 @@ External network services:
 - Cascading, searchable city lists for the selected country
 - Manual connection to a known server ID, such as `CH#242`
 - Full searchable server browser sourced read-only from Proton's local cache
-- Interactive local server map using normalized cached coordinates, with no map service or tracking
+- Interactive local server map with continent context, Ctrl+scroll zoom, and drag panning, using normalized cached coordinates without a map service or tracking
 - Server load, availability, tier, entry/exit country, and feature filters
 - P2P, Secure Core, and Tor server filters
 - Favorite quick-connect targets that persist across shell restarts
@@ -175,7 +175,8 @@ responsive.
 
 The map aggregates matching servers by exit country and plots Proton's cached
 latitude/longitude values locally. Selecting a marker applies the country filter;
-it never connects directly or contacts a mapping provider.
+it never connects directly or contacts a mapping provider. Use **Ctrl+scroll** to
+zoom around the pointer, drag to pan, and double-click to reset the view.
 
 Selecting an individual server always invokes only `protonvpn connect SERVER_ID`.
 The helper never connects, disconnects, authenticates, refreshes the server list,

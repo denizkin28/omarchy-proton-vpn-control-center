@@ -40,9 +40,13 @@ class LifecycleTests(unittest.TestCase):
                                  for path in target.rglob("*")))
 
     def test_signin_wrapper_holds_failures_for_acknowledgement(self):
-        completed = subprocess.run(
-            [str(ROOT / "protonvpn-signin-terminal"), str(ROOT / "tests/fake-protonvpn"), "test-user"],
-            input="\n", text=True, capture_output=True)
+        with tempfile.TemporaryDirectory() as directory:
+            result = pathlib.Path(directory) / "signin-result"
+            completed = subprocess.run(
+                [str(ROOT / "protonvpn-signin-terminal"), "--result-file", str(result),
+                 "--token", "attempt-1", str(ROOT / "tests/fake-protonvpn"), "test-user"],
+                input="\n", text=True, capture_output=True)
+            self.assertEqual(result.read_text(), "attempt-1\tfailure\n")
         self.assertEqual(completed.returncode, 4)
         self.assertIn("Proton may be silent for several seconds while verifying", completed.stdout)
         self.assertIn("The window is still working", completed.stdout)

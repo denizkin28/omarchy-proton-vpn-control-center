@@ -1,8 +1,31 @@
 #!/usr/bin/env bash
 set -u
 
+result_file=""
+attempt_token=""
+while (( $# > 0 )); do
+  case "$1" in
+    --result-file) result_file=${2:-}; shift 2 ;;
+    --token) attempt_token=${2:-}; shift 2 ;;
+    *) break ;;
+  esac
+done
+
 cli=${1:-protonvpn}
 username=${2:-}
+
+write_result() {
+  [[ -n "$result_file" && -n "$attempt_token" ]] || return 0
+  local result_dir temporary
+  result_dir=$(dirname -- "$result_file")
+  mkdir -p -- "$result_dir"
+  temporary="${result_file}.tmp.$$"
+  umask 077
+  printf '%s\t%s\n' "$attempt_token" "$1" > "$temporary"
+  mv -f -- "$temporary" "$result_file"
+}
+
+write_result running
 
 # Some Wayland terminal launchers detach by sending SIGHUP to their original
 # process group. Keep Proton's interactive credential prompt alive through that
@@ -29,6 +52,12 @@ fi
 
 "$cli" signin "$username"
 status=$?
+
+if (( status == 0 )); then
+  write_result success
+else
+  write_result failure
+fi
 
 printf '\n'
 if (( status == 0 )); then

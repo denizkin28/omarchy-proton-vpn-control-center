@@ -73,6 +73,7 @@ Item {
   readonly property string dataHelper: Quickshell.env("HOME") + "/.config/omarchy/plugins/denizkin.protonvpn/protonvpn-data-helper"
   readonly property string systemHelper: Quickshell.env("HOME") + "/.config/omarchy/plugins/denizkin.protonvpn/protonvpn-system-helper"
   readonly property string signinHelper: Quickshell.env("HOME") + "/.config/omarchy/plugins/denizkin.protonvpn/protonvpn-signin-terminal"
+  readonly property string signinResultFile: (Quickshell.env("XDG_RUNTIME_DIR") || (Quickshell.env("HOME") + "/.local/state")) + "/denizkin.protonvpn-signin-result"
   readonly property int refreshIntervalSec: intSetting("refreshIntervalSec", 30, 5, 3600)
   readonly property bool busy: whichProcess.running || statusProcess.running || actionProcess.running || profileProcess.running
     || recoveryProcess.running || configActionProcess.running || integrationProcess.running || dnsCompatibilityBusy || onboardingBusy
@@ -144,6 +145,8 @@ Item {
   property string _onboardingErrorOutput: ""
   property string _onboardingMode: ""
   property int _onboardingPollCount: 0
+  property string _signinAttemptToken: ""
+  property string _signinResultOutput: ""
   property string _healthOutput: ""
   property bool _healthRefreshPending: false
   property string _networkOutput: ""
@@ -335,6 +338,7 @@ Item {
     onboardingPollTimer.stop()
     _onboardingMode = ""
     _onboardingPollCount = 0
+    _signinAttemptToken = ""
   }
 
   function installCli() {
@@ -357,7 +361,9 @@ Item {
 
   function signIn(username) {
     if (!installed || onboardingBusy) return false
-    var plan = Model.signinPlan("omarchy", cliCommand, username, signinHelper)
+    _signinAttemptToken = String(Date.now()) + "-" + String(Math.floor(Math.random() * 1000000))
+    var plan = Model.signinPlan("omarchy", cliCommand, username, signinHelper,
+      signinResultFile, _signinAttemptToken)
     if (!plan.ok) {
       onboardingError = plan.error
       return false
@@ -372,6 +378,13 @@ Item {
     onboardingStatus = "Complete sign-in in the Proton terminal; this panel will update automatically."
     beginOnboardingPolling("signin")
     return true
+  }
+
+  function checkSigninResult() {
+    if (_onboardingMode !== "signin" || !_signinAttemptToken || signinResultProcess.running) return
+    _signinResultOutput = ""
+    signinResultProcess.command = ["cat", signinResultFile]
+    signinResultProcess.running = true
   }
 
   function refreshStatus() {
@@ -719,6 +732,7 @@ Item {
         root.finishOnboardingPolling()
         root.onboardingStatus = "Use Refresh after completing the terminal step."
       } else {
+        if (root._onboardingMode === "signin") root.checkSigninResult()
         root.refresh()
       }
     }
@@ -845,6 +859,33 @@ Item {
       if (browserProcess.running) browserProcess.running = false
       root.reportError = root._openReportAfterLookup ? "Opening the IP report timed out" : "Exit IP lookup timed out"
       root._openReportAfterLookup = false
+    }
+  }
+
+  Process {
+    id: signinResultProcess
+    running: false
+    command: []
+    stdout: StdioCollector {
+      id: signinResultStdout
+      waitForEnd: true
+      onStreamFinished: root._signinResultOutput = text
+    }
+    onExited: function(exitCode) {
+      if (exitCode !== 0 || root._onboardingMode !== "signin") return
+      var fields = String(signinResultStdout.text || root._signinResultOutput || "").trim().split("\t")
+      if (fields.length < 2 || fields[0] !== root._signinAttemptToken) return
+      if (fields[1] === "failure") {
+        root.finishOnboardingPolling()
+        root.onboardingStatus = ""
+        root.onboardingError = "Sign-in failed. Check the Proton terminal and try again."
+        root.lastError = root.onboardingError
+        root.needsLogin = true
+        root.authResolved = true
+        root.statusText = "Needs sign-in"
+      } else if (fields[1] === "success") {
+        root.refresh()
+      }
     }
   }
 

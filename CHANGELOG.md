@@ -2,6 +2,12 @@
 
 ## 0.9.0-local — 2026-08-24
 
+- Add pointer-centered Ctrl+wheel zoom, drag panning, and view reset to the local
+  server map, with a taller viewport, continent silhouettes, and stable-size
+  country markers.
+- Stop the panel's sign-in activity indicator promptly when Proton rejects an
+  invalid password, while keeping all credential handling inside Proton's CLI.
+
 - Share one QML service across all monitors so polling, automation, connection
   state, and action guards cannot race between bar instances.
 - Add animated connect/disconnect feedback, retryable connection actions,

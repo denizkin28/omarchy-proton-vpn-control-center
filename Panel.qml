@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as Controls
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import qs.Commons
@@ -2105,33 +2106,148 @@ Panel {
     id: serverMap
     required property var countries
     property string selectedCode: ""
+    property real zoom: 1.0
     signal selected(string code)
 
-    implicitHeight: Style.space(190)
+    function resetView(): void {
+      zoom = 1.0
+      mapContent.x = 0
+      mapContent.y = 0
+    }
+
+    function clampView(): void {
+      mapContent.x = Math.max(serverMap.width - mapContent.width * zoom, Math.min(0, mapContent.x))
+      mapContent.y = Math.max(serverMap.height - mapContent.height * zoom, Math.min(0, mapContent.y))
+    }
+
+    implicitHeight: Style.space(260)
     color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.025)
     radius: Style.cornerRadius
     borderSpec: Border.flat(Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.16), 1)
     clip: true
 
-    Repeater {
-      model: [-120, -60, 0, 60, 120]
-      Rectangle {
-        required property real modelData
-        x: (modelData + 180) / 360 * serverMap.width
-        width: 1
-        height: serverMap.height
-        color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.07)
+    MouseArea {
+      id: mapNavigation
+      anchors.fill: parent
+      acceptedButtons: Qt.LeftButton
+      cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+      drag.target: serverMap.zoom > 1 ? mapContent : undefined
+      drag.minimumX: serverMap.width - mapContent.width * serverMap.zoom
+      drag.maximumX: 0
+      drag.minimumY: serverMap.height - mapContent.height * serverMap.zoom
+      drag.maximumY: 0
+      onDoubleClicked: serverMap.resetView()
+      onWheel: function(wheel) {
+        if (!(wheel.modifiers & Qt.ControlModifier)) {
+          wheel.accepted = false
+          return
+        }
+        var oldZoom = serverMap.zoom
+        var step = wheel.angleDelta.y > 0 ? 1.25 : 0.8
+        var nextZoom = Math.max(1, Math.min(5, oldZoom * step))
+        if (nextZoom === oldZoom) return
+        var ratio = nextZoom / oldZoom
+        mapContent.x = wheel.x - (wheel.x - mapContent.x) * ratio
+        mapContent.y = wheel.y - (wheel.y - mapContent.y) * ratio
+        serverMap.zoom = nextZoom
+        serverMap.clampView()
+        wheel.accepted = true
       }
     }
 
-    Repeater {
-      model: [-45, 0, 45]
-      Rectangle {
-        required property real modelData
-        y: (90 - modelData) / 180 * serverMap.height
-        width: serverMap.width
-        height: 1
-        color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.07)
+    Item {
+      id: mapContent
+      width: serverMap.width
+      height: serverMap.height
+      scale: serverMap.zoom
+      transformOrigin: Item.TopLeft
+
+      Image {
+        id: worldMapSource
+        anchors.fill: parent
+        source: Qt.resolvedUrl("assets/world-map.svg")
+        fillMode: Image.Stretch
+        visible: false
+        smooth: true
+      }
+
+      MultiEffect {
+        anchors.fill: worldMapSource
+        source: worldMapSource
+        colorization: 1
+        colorizationColor: root.foreground
+        opacity: 0.12
+      }
+
+      Repeater {
+        model: [-120, -60, 0, 60, 120]
+        Rectangle {
+          required property real modelData
+          x: (modelData + 180) / 360 * mapContent.width
+          width: 1
+          height: mapContent.height
+          color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.07)
+        }
+      }
+
+      Repeater {
+        model: [-45, 0, 45]
+        Rectangle {
+          required property real modelData
+          y: (90 - modelData) / 180 * mapContent.height
+          width: mapContent.width
+          height: 1
+          color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.07)
+        }
+      }
+
+      Repeater {
+        model: serverMap.countries
+        Rectangle {
+          id: mapMarker
+          required property var modelData
+          readonly property bool selected: String(modelData.code || "") === serverMap.selectedCode
+          readonly property bool highlighted: selected || mapMouse.containsMouse
+          width: highlighted ? Style.space(28) / serverMap.zoom : Style.space(8) / serverMap.zoom
+          height: highlighted ? Style.space(18) / serverMap.zoom : Style.space(8) / serverMap.zoom
+          radius: highlighted ? Style.cornerRadius / serverMap.zoom : width / 2
+          z: highlighted ? 2 : 1
+          x: Math.max(0, Math.min(mapContent.width - width,
+            (Number(modelData.longitude || 0) + 180) / 360 * mapContent.width - width / 2))
+          y: Math.max(0, Math.min(mapContent.height - height,
+            (90 - Number(modelData.latitude || 0)) / 180 * mapContent.height - height / 2))
+          color: selected ? Color.accent : (Boolean(modelData.available)
+            ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, highlighted ? 0.8 : 0.55)
+            : Qt.rgba(root.urgent.r, root.urgent.g, root.urgent.b, highlighted ? 0.8 : 0.55))
+          border.color: selected ? root.foreground : (Boolean(modelData.available) ? Color.accent : root.urgent)
+          border.width: 1 / serverMap.zoom
+
+          Text {
+            anchors.centerIn: parent
+            visible: mapMarker.highlighted
+            text: String(mapMarker.modelData.code || "")
+            color: selected ? root.foreground : (Boolean(mapMarker.modelData.available) ? root.foreground : root.urgent)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption / serverMap.zoom
+            font.bold: selected
+          }
+
+          MouseArea {
+            id: mapMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: serverMap.selected(String(mapMarker.modelData.code || ""))
+          }
+
+          PanelToolTip {
+            visible: mapMouse.containsMouse
+            text: String(mapMarker.modelData.code || "") + " · "
+              + Number(mapMarker.modelData.serverCount || 0) + " servers · best "
+              + Number(mapMarker.modelData.minimumLoad || 0) + "%"
+            fontFamily: root.fontFamily
+          }
+        }
       }
     }
 
@@ -2144,55 +2260,18 @@ Panel {
       font.family: root.fontFamily
       font.pixelSize: Style.font.caption
       font.bold: true
+      z: 10
     }
 
-    Repeater {
-      model: serverMap.countries
-      Rectangle {
-        id: mapMarker
-        required property var modelData
-        readonly property bool selected: String(modelData.code || "") === serverMap.selectedCode
-        readonly property bool highlighted: selected || mapMouse.containsMouse
-        width: highlighted ? Style.space(28) : Style.space(8)
-        height: highlighted ? Style.space(18) : Style.space(8)
-        radius: highlighted ? Style.cornerRadius : width / 2
-        z: highlighted ? 2 : 1
-        x: Math.max(0, Math.min(serverMap.width - width,
-          (Number(modelData.longitude || 0) + 180) / 360 * serverMap.width - width / 2))
-        y: Math.max(0, Math.min(serverMap.height - height,
-          (90 - Number(modelData.latitude || 0)) / 180 * serverMap.height - height / 2))
-        color: selected ? Color.accent : (Boolean(modelData.available)
-          ? Qt.rgba(Color.accent.r, Color.accent.g, Color.accent.b, highlighted ? 0.8 : 0.55)
-          : Qt.rgba(root.urgent.r, root.urgent.g, root.urgent.b, highlighted ? 0.8 : 0.55))
-        border.color: selected ? root.foreground : (Boolean(modelData.available) ? Color.accent : root.urgent)
-        border.width: 1
-
-        Text {
-          anchors.centerIn: parent
-          visible: mapMarker.highlighted
-          text: String(mapMarker.modelData.code || "")
-          color: selected ? root.foreground : (Boolean(mapMarker.modelData.available) ? root.foreground : root.urgent)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-          font.bold: selected
-        }
-
-        MouseArea {
-          id: mapMouse
-          anchors.fill: parent
-          hoverEnabled: true
-          cursorShape: Qt.PointingHandCursor
-          onClicked: serverMap.selected(String(mapMarker.modelData.code || ""))
-        }
-
-        PanelToolTip {
-          visible: mapMouse.containsMouse
-          text: String(mapMarker.modelData.code || "") + " · "
-            + Number(mapMarker.modelData.serverCount || 0) + " servers · best "
-            + Number(mapMarker.modelData.minimumLoad || 0) + "%"
-          fontFamily: root.fontFamily
-        }
-      }
+    Text {
+      anchors.right: parent.right
+      anchors.bottom: parent.bottom
+      anchors.margins: Style.space(7)
+      text: Math.round(serverMap.zoom * 100) + "% · Ctrl+scroll to zoom · drag to pan · double-click to reset"
+      color: root.dim
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.caption
+      z: 10
     }
   }
 

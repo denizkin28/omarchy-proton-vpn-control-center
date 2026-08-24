@@ -70,12 +70,13 @@ test("builds the supported Omarchy CLI installer command", () => {
 })
 
 test("opens persistent interactive Proton sign-in in an Omarchy terminal", () => {
-  assert.deepEqual(model.signinPlan("omarchy", "protonvpn", "user@proton.me", "/plugin/protonvpn-signin-terminal"), {
+  assert.deepEqual(model.signinPlan("omarchy", "protonvpn", "user@proton.me", "/plugin/protonvpn-signin-terminal", "/run/user/1000/proton-result", "attempt-1"), {
     ok: true,
     error: "",
     command: [
       "omarchy", "launch", "terminal", "--",
-      "/plugin/protonvpn-signin-terminal", "protonvpn", "user@proton.me"
+      "/plugin/protonvpn-signin-terminal", "--result-file", "/run/user/1000/proton-result",
+      "--token", "attempt-1", "protonvpn", "user@proton.me"
     ]
   })
 
