@@ -2,6 +2,7 @@
 
 import json
 import pathlib
+import shutil
 import subprocess
 import tempfile
 import os
@@ -15,6 +16,7 @@ from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 HELPER = ROOT / "protonvpn-system-helper"
+PROTON_BACKEND_AVAILABLE = importlib.util.find_spec("proton") is not None
 
 
 def load_helper_module():
@@ -156,6 +158,8 @@ class SystemHelperTests(unittest.TestCase):
         self.assertIsInstance(result["health"]["rxBytes"], int)
         self.assertIn("routeThroughVpn", result["health"])
 
+    @unittest.skipUnless(shutil.which("ip") and shutil.which("nmcli"),
+                         "NetworkManager commands are unavailable")
     def test_network_is_read_only_and_normalized(self):
         _, result = call("network")
         self.assertIn("connection", result["network"])
@@ -189,11 +193,13 @@ class SystemHelperTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"PROTONVPN_FAKE_PLAN": "Visionary"}):
             self.assertEqual(helper.resolve_user_tier(fake), 3)
 
+    @unittest.skipUnless(PROTON_BACKEND_AVAILABLE, "Proton VPN backend is not installed")
     def test_installed_split_tunnelling_api_is_compatible(self):
         _, result = call("split-get")
         self.assertTrue(result["splitTunneling"]["available"])
         self.assertIn(result["splitTunneling"]["mode"], ("include", "exclude"))
 
+    @unittest.skipUnless(shutil.which("protonvpn"), "Proton VPN CLI is not installed")
     def test_port_status_does_not_start_the_service(self):
         _, before = call("port-status")
         _, after = call("port-status")
@@ -241,12 +247,14 @@ class SystemHelperTests(unittest.TestCase):
             self.assertIn("disconnect", commands)
             self.assertIn("connect AE#44", commands)
 
+    @unittest.skipUnless(importlib.util.find_spec("gi"), "PyGObject is not installed")
     def test_lists_installed_apps_as_normalized_json(self):
         _, result = call("apps")
         self.assertIsInstance(result["applications"], list)
         if result["applications"]:
             self.assertEqual(set(result["applications"][0]), {"name", "executable", "icon"})
 
+    @unittest.skipUnless(PROTON_BACKEND_AVAILABLE, "Proton VPN backend is not installed")
     def test_exposes_only_protocols_validated_by_proton(self):
         _, result = call("settings-get")
         protocols = result["coreSettings"]["protocols"]
@@ -266,6 +274,8 @@ class SystemHelperTests(unittest.TestCase):
             self.assertTrue(recovery["skipped"])
             self.assertEqual(recovery["error"], "Manual disconnect respected")
 
+    @unittest.skipUnless(shutil.which("nmcli") and shutil.which("journalctl"),
+                         "Desktop diagnostic commands are unavailable")
     def test_diagnostics_are_local_redacted_and_private(self):
         with tempfile.TemporaryDirectory() as state:
             environment = dict(os.environ, XDG_STATE_HOME=state)
@@ -280,6 +290,7 @@ class SystemHelperTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertEqual(result["error"], "A setting and value are required")
 
+    @unittest.skipUnless(PROTON_BACKEND_AVAILABLE, "Proton VPN backend is not installed")
     def test_transaction_dry_run_is_non_mutating_and_has_rollback(self):
         _, result = call("transaction-set", "--operation", "settings", "--setting", "protocol",
                          "--value", "wireguard", "--dry-run")
