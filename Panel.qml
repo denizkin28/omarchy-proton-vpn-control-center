@@ -1042,7 +1042,7 @@ Panel {
                 width: parent.width
                 checked: Boolean(root.settings && root.settings.recoverUnexpectedDrops)
                 label: "Recover unexpected VPN drops"
-                description: "Retry the last server, then fall back to Proton's fastest server. Manual disconnects are respected."
+                description: "Retry the last server, then fall back to Proton's fastest server. Recovery stays paused for about 45 seconds after a manual or transactional disconnect."
                 foreground: root.foreground
                 accent: Color.accent
                 fontFamily: root.fontFamily

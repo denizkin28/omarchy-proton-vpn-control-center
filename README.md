@@ -1,10 +1,10 @@
 # Proton VPN Control Center for Omarchy
 
-A local, security-reviewed Omarchy bar widget for the official Proton VPN Linux CLI.
+A security-reviewed Omarchy bar widget for the official Proton VPN Linux CLI.
 
-This build is maintained for Deniz's Omarchy system and is derived from Bram
-Vera's MIT-licensed Proton VPN Control Center. It keeps the original copyright
-and attribution while using the local `denizkin.protonvpn` identity.
+This plugin is maintained by [@denizkin28](https://github.com/denizkin28) and is
+derived from Bram Vera's MIT-licensed Proton VPN Control Center. It keeps the
+original copyright and attribution while using the `denizkin.protonvpn` identity.
 
 Connect, disconnect, choose locations, manage VPN settings, save favorite targets, and inspect the active exit IP without leaving the Omarchy bar.
 
@@ -14,6 +14,12 @@ Connect, disconnect, choose locations, manage VPN settings, save favorite target
 ## Preview
 
 ![Proton VPN for Omarchy plugin overview](preview.png)
+
+## Screenshots
+
+| Connection | Server map | VPN settings |
+| --- | --- | --- |
+| ![Live connection panel](assets/proton-vpn-panel.png) | ![Interactive server map](assets/proton-vpn-map.png) | ![VPN settings and advanced controls](assets/proton-vpn-settings.png) |
 
 ## Install
 
@@ -130,7 +136,7 @@ External network services:
 - Choose Fastest or a saved profile as the untrusted-network policy
 - Optional recovery after an unexpected drop: retry the last server, then Fastest
 - One shared service keeps polling, automation, and connection state synchronized across monitors
-- Shared manual-disconnect markers prevent recovery from undoing deliberate or transactional disconnects
+- Shared manual-disconnect markers prevent recovery from undoing deliberate or transactional disconnects; recovery remains suppressed for about 45 seconds after such an operation
 - Optional desktop notifications for recovery and forwarded-port changes
 
 Trust is matched by NetworkManager connection name, not by cryptographic network
@@ -289,8 +295,9 @@ omarchy bar move denizkin.protonvpn --section right
 
 ## Update
 
-This is a locally maintained plugin. Review and merge upstream changes manually;
-do not replace it with an unreviewed marketplace update.
+This plugin is independently maintained. Review changes from the
+[original project](https://github.com/bramvera/omarchy-proton-vpn) before merging
+them; do not replace this installation with an unreviewed marketplace update.
 
 ## Remove
 

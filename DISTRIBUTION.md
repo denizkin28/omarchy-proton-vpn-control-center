@@ -1,8 +1,9 @@
 # Distribution
 
-This repository is a locally maintained security-sensitive Omarchy plugin. The
-configured `reference-upstream` remote is for reviewing Bram Vera's original
-project; do not push this fork there.
+This repository is an independently maintained security-sensitive Omarchy
+plugin. Review Bram Vera's
+[original project](https://github.com/bramvera/omarchy-proton-vpn) when assessing
+upstream changes; publish releases only from the maintainer-owned repository.
 
 ## Release checklist
 
