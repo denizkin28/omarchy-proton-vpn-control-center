@@ -18,7 +18,7 @@ Connect, disconnect, choose locations, manage VPN settings, save favorite target
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/OWNER/REPOSITORY.git --enable
+omarchy plugin add https://github.com/denizkin28/omarchy-proton-vpn-control-center.git --enable
 ```
 
 The widget appears in the right section of the bar by default.
@@ -307,7 +307,7 @@ VPN settings you explicitly changed through the panel remain Proton VPN CLI sett
 Clone the repository and validate it against the installed Omarchy shell:
 
 ```bash
-git clone https://github.com/OWNER/REPOSITORY.git denizkin.protonvpn
+git clone https://github.com/denizkin28/omarchy-proton-vpn-control-center.git denizkin.protonvpn
 cd denizkin.protonvpn
 
 omarchy plugin validate .

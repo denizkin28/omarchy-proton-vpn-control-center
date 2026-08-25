@@ -16,7 +16,7 @@ project; do not push this fork there.
 ## Install from a trusted repository
 
 ```bash
-omarchy plugin add https://github.com/OWNER/REPOSITORY.git --enable
+omarchy plugin add https://github.com/denizkin28/omarchy-proton-vpn-control-center.git --enable
 ```
 
 ## Install an inspected local checkout
