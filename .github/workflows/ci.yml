@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Validate shell scripts
+        run: bash -n protonvpn-signin-terminal tools/package.sh
+      - name: Run JavaScript and QML source tests
+        run: node --test tests/model.test.js tests/qml-ui.test.js
+      - name: Run helper and lifecycle tests
+        run: |
+          python tests/data-helper.test.py
+          python tests/system-helper.test.py
+          python tests/lifecycle.test.py
+      - name: Build release archive
+        run: ./tools/package.sh "$RUNNER_TEMP/release"

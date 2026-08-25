@@ -2,6 +2,7 @@
 
 import json
 import pathlib
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -12,6 +13,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class LifecycleTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("omarchy"), "Omarchy is not installed")
     def test_manifest_validates_with_installed_omarchy(self):
         completed = subprocess.run(["omarchy", "plugin", "validate", str(ROOT)],
                                    text=True, capture_output=True)
@@ -33,8 +35,9 @@ class LifecycleTests(unittest.TestCase):
             target = pathlib.Path(directory) / "denizkin.protonvpn"
             subprocess.run(["cp", "-a", str(ROOT), str(target)], check=True)
             self.assertTrue((target / "manifest.json").is_file())
-            subprocess.run(["omarchy", "plugin", "validate", str(target)], check=True,
-                           stdout=subprocess.DEVNULL)
+            if shutil.which("omarchy"):
+                subprocess.run(["omarchy", "plugin", "validate", str(target)], check=True,
+                               stdout=subprocess.DEVNULL)
             # Removal owns only the plugin directory; it must not contain Proton account data.
             self.assertFalse(any(path.name in {"settings.json", "connection_persistence.json"}
                                  for path in target.rglob("*")))
@@ -56,7 +59,7 @@ class LifecycleTests(unittest.TestCase):
     def test_release_archive_contains_only_reviewed_paths(self):
         allowed_roots = {
             "LICENSE", "Model.js", "Panel.qml", "ProtonVpnIcon.qml", "Service.qml", "qmldir",
-            "manifest.json", "README.md", "CHANGELOG.md", "DISTRIBUTION.md", "preview.png",
+            "manifest.json", "README.md", "CHANGELOG.md", "DISTRIBUTION.md", "SECURITY.md", "preview.png",
             "protonvpn-data-helper", "protonvpn-system-helper", "protonvpn-signin-terminal",
             "assets", "tests", "tools",
         }

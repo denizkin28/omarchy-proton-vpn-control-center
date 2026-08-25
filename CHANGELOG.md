@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.0-local — 2026-08-24
+## 0.9.0 — 2026-08-25
 
 - Add pointer-centered Ctrl+wheel zoom, drag panning, and view reset to the local
   server map, with a taller viewport, continent silhouettes, and stable-size
