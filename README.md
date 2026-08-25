@@ -1,5 +1,7 @@
 # Proton VPN Control Center for Omarchy
 
+[![CI](https://github.com/denizkin28/omarchy-proton-vpn-control-center/actions/workflows/ci.yml/badge.svg)](https://github.com/denizkin28/omarchy-proton-vpn-control-center/actions/workflows/ci.yml)
+
 A security-reviewed Omarchy bar widget for the official Proton VPN Linux CLI.
 
 This plugin is maintained by [@denizkin28](https://github.com/denizkin28) and is
@@ -318,6 +320,7 @@ git clone https://github.com/denizkin28/omarchy-proton-vpn-control-center.git de
 cd denizkin.protonvpn
 
 omarchy plugin validate .
+bash -n protonvpn-signin-terminal tools/package.sh tests/fake-protonvpn
 node --test tests/*.test.js
 python tests/data-helper.test.py -v
 python tests/system-helper.test.py -v
@@ -336,6 +339,19 @@ Do not start a second Quickshell process. Omarchy plugins share the existing lon
 `omarchy plugin validate .` is the authoritative QML/plugin check. Standalone
 `qmllint` cannot fully resolve Omarchy's runtime-provided `qs.*` namespaces and
 typed IPC syntax, so it may emit false-positive import or parser warnings.
+
+## Continuous integration
+
+GitHub Actions runs shell syntax checks, the portable JavaScript and Python test
+suites, lifecycle checks, and a release-archive build on every push and pull
+request to `main`. Tests that require an installed Omarchy shell, Proton backend,
+NetworkManager, or desktop integration are skipped only when those host
+dependencies are unavailable; the complete suite runs without skips on a fully
+configured Omarchy system.
+
+The workflow grants only read access to repository contents and pins official
+GitHub Actions to reviewed commit SHAs. Dependabot checks those action pins
+weekly and proposes updates through pull requests.
 
 ## IPC
 

@@ -9,10 +9,12 @@ upstream changes; publish releases only from the maintainer-owned repository.
 
 1. Review `git diff` and confirm no credentials, diagnostics, or machine-specific state is present.
 2. Run the validation commands documented in `README.md`.
-3. Run `./tools/package.sh` and verify the printed SHA-256 checksum.
-4. Commit and tag the reviewed tree, for example `v0.9.0`.
-5. Create a separate repository owned by the maintainer and add it as a new remote.
-6. Push only after checking the exact remote URL with `git remote -v`.
+3. Run `./tools/package.sh` twice and confirm the archives are byte-identical.
+4. Verify the generated checksum with `sha256sum -c dist/*.tar.gz.sha256`.
+5. Commit and push to the maintainer-owned `origin`, then confirm GitHub Actions passes.
+6. Create an annotated tag matching the manifest version, push it, and publish a GitHub Release.
+7. Attach both the `.tar.gz` archive and its `.sha256` file to the release.
+8. Confirm the documented trusted-repository installation command works before announcing the release.
 
 ## Install from a trusted repository
 
