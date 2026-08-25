@@ -26,6 +26,8 @@ def load_helper():
 
 class DataHelperTests(unittest.TestCase):
     def test_installed_proton_package_is_compatible(self):
+        if load_helper().package_version("proton-vpn-api-core") is None:
+            self.skipTest("Proton VPN API Core is not installed")
         completed = subprocess.run(
             [str(HELPER), "--query", "AE#", "--available-only", "--limit", "2"],
             check=True,
