@@ -545,7 +545,6 @@ Panel {
       ProtonVpnIcon {
         iconSize: Style.space(11)
         badgeColor: root.urgent
-        foreground: root.foreground
         connected: vpn.connected
         warning: vpn.needsLogin || vpn.lastError !== "" || vpn.healthDegraded
         busy: vpn.indicatorBusy
@@ -613,7 +612,6 @@ Panel {
                 ProtonVpnIcon {
                   iconSize: Style.font.display
                   badgeColor: root.urgent
-                  foreground: root.foreground
                   connected: vpn.connected
                   warning: vpn.needsLogin || vpn.lastError !== "" || vpn.healthDegraded
                   busy: vpn.indicatorBusy

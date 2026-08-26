@@ -89,23 +89,19 @@ test("waits for fresh health data before warning after connection", () => {
   assert.match(panel, /!vpn\.healthResolved \? "Verifying…"/)
 })
 
-test("uses the official gradient and the white Simple Icons silhouette", () => {
+test("uses the recognizable official gradient in both connection states", () => {
   const asset = fs.readFileSync(path.join(root, "assets", "VPN-logomark-noborder.svg"))
-  const disconnectedAsset = fs.readFileSync(path.join(root, "assets", "proton-vpn-simple-white.svg"), "utf8")
 
   assert.equal(
     crypto.createHash("sha256").update(asset).digest("hex"),
     "1c71b5712fe9beb1605871431d5d967d75aac3e300cd7664ee97c3f4e7170277"
   )
   assert.match(icon, /"assets\/VPN-logomark-noborder\.svg"/)
-  assert.match(icon, /"assets\/proton-vpn-simple-white\.svg"/)
+  assert.match(icon, /opacity: root\.connected \? 1\.0 : 0\.5/)
   assert.match(icon, /running: root\.busy/)
-  assert.match(icon, /MultiEffect/)
-  assert.match(icon, /colorizationColor: root\.foreground/)
+  assert.doesNotMatch(icon, /MultiEffect/)
   assert.match(icon, /visible: root\.warning/)
   assert.doesNotMatch(icon, /PathSvg|Simple Icons/)
-  assert.match(disconnectedAsset, /fill="#FFFFFF"/)
-  assert.doesNotMatch(disconnectedAsset, /#000000/)
 })
 
 test("primary controls expose accessibility and shortcut disconnects are confirmed", () => {

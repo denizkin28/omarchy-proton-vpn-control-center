@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Effects
 import qs.Commons
 
 // Official Proton VPN mark from Proton's media kit.
@@ -10,7 +9,6 @@ Item {
 
   property real iconSize: Style.font.icon
   property color badgeColor: Color.urgent
-  property color foreground: Color.foreground
   property bool connected: false
   property bool warning: false
   property bool busy: false
@@ -29,30 +27,11 @@ Item {
 
     Image {
       anchors.fill: parent
-      visible: root.connected
       source: Qt.resolvedUrl("assets/VPN-logomark-noborder.svg")
       fillMode: Image.PreserveAspectFit
       smooth: true
       mipmap: true
-    }
-
-    Image {
-      id: disconnectedLogo
-      anchors.fill: parent
-      visible: false
-      layer.enabled: !root.connected
-      source: Qt.resolvedUrl("assets/proton-vpn-simple-white.svg")
-      fillMode: Image.PreserveAspectFit
-      smooth: true
-      mipmap: true
-    }
-
-    MultiEffect {
-      anchors.fill: disconnectedLogo
-      source: disconnectedLogo
-      visible: !root.connected
-      colorization: 1.0
-      colorizationColor: root.foreground
+      opacity: root.connected ? 1.0 : 0.5
     }
 
     SequentialAnimation on opacity {
